@@ -1,6 +1,7 @@
 """The bills-native tools on the shared MCP server, called in-process through fastmcp's client against a faked bills-db and transactions-db; no network."""
 import asyncio
 import importlib.util
+import logging
 from pathlib import Path
 
 import pytest
@@ -102,6 +103,27 @@ def test_compare_needs_a_sane_window_and_an_existing_bill(server):
     with pytest.raises(ToolError, match="bill not found"):
         call(server, "compare_bill_with_bank_charges", {"bill_id": 999, "start_date": "2026-07-03", "end_date": "2026-10-01"})
     assert not any(c[0].endswith("/transactions") for c in server.calls)
+
+
+def test_refusals_are_tool_errors_the_server_logs_without_a_traceback(server):
+    records = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    fastmcp_logger = logging.getLogger("fastmcp")
+    fastmcp_logger.addHandler(handler)
+    try:
+        for name, arguments, message in (
+            ("list_bills", {"bill_type": "loan"}, "bill_type"),
+            ("get_bill_payments", {"bill_id": 999}, "bill not found"),
+            ("compare_bill_with_bank_charges", {"bill_id": 3, "start_date": "2026-10-01", "end_date": "2026-07-03"}, "366"),
+            ("compare_bill_with_bank_charges", {"bill_id": 3, "start_date": "not-a-date", "end_date": "2026-10-01"}, "YYYY-MM-DD"),
+            ("compare_bill_with_bank_charges", {"bill_id": 999, "start_date": "2026-07-03", "end_date": "2026-10-01"}, "bill not found"),
+        ):
+            with pytest.raises(ToolError, match=message):
+                call(server, name, arguments)
+    finally:
+        fastmcp_logger.removeHandler(handler)
+    assert len(records) == 5 and not any(r.exc_info for r in records)
 
 
 def test_the_three_tools_are_registered_read_only_beside_the_existing_four(server):

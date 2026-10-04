@@ -6,6 +6,7 @@ from datetime import datetime
 import requests
 from dateutil import parser
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 logger = logging.getLogger("mcp-server")
@@ -173,10 +174,10 @@ BILLS_DB_URL = os.getenv("BILLS_DB_URL", "http://localhost:6005")
 
 
 def _bills_db(path: str):
-    """GET one bills-db path as JSON; 404 becomes ValueError("bill not found")."""
+    """GET one bills-db path as JSON; 404 becomes ToolError("bill not found"), a refusal the server logs in one line."""
     resp = requests.get(f"{BILLS_DB_URL.rstrip('/')}{path}", timeout=10)
     if resp.status_code == 404:
-        raise ValueError("bill not found")
+        raise ToolError("bill not found")
     resp.raise_for_status()
     return resp.json()
 
@@ -201,7 +202,7 @@ def list_bills(bill_type: str | None = None) -> list[dict]:
         bill_type: 'bill' or 'subscription' to return only that type; omit for every bill.
     """
     if bill_type not in (None, "bill", "subscription"):
-        raise ValueError("bill_type must be 'bill' or 'subscription'")
+        raise ToolError("bill_type must be 'bill' or 'subscription'")
     return [bill for bill in _bills_db("/bills") if bill_type in (None, bill["type"])]
 
 
@@ -224,9 +225,12 @@ def compare_bill_with_bank_charges(bill_id: int, start_date: str, end_date: str)
         start_date: First day to include, YYYY-MM-DD.
         end_date: Last day to include, YYYY-MM-DD, on or after start_date and at most 366 days later.
     """
-    start, end = parser.isoparse(start_date).date().isoformat(), parser.isoparse(end_date).date().isoformat()
+    try:
+        start, end = parser.isoparse(start_date).date().isoformat(), parser.isoparse(end_date).date().isoformat()
+    except ValueError:
+        raise ToolError("start_date and end_date must be YYYY-MM-DD") from None
     if not 0 <= (parser.isoparse(end) - parser.isoparse(start)).days <= 366:
-        raise ValueError("end_date must be on or after start_date and at most 366 days later")
+        raise ToolError("end_date must be on or after start_date and at most 366 days later")
     found = get_bill_payments(bill_id)
     bill = found["bill"]
     resp = requests.get(f"{TRANSACTIONS_DB_URL.rstrip('/')}/transactions", params={"merchant": bill["merchant"], "date_from": start, "date_to": end}, timeout=10)
