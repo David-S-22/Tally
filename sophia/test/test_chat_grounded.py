@@ -6,6 +6,7 @@ import pytest
 from conftest import response_text as _text
 from sophia.backend import config
 from sophia.backend.clients import bills_db as bills_db_module
+from sophia.backend.services import chat as chat_service
 from sophia.backend.services import evidence as evidence_service
 from sophia.backend.services.errors import ModeError
 
@@ -102,6 +103,35 @@ def test_a_question_naming_a_bill_never_becomes_a_proposal(live_client, modes_on
     assert "Netflix is next charged on 2026-10-14." in body and "bill #4 · Netflix" in body
     assert "Proposed:" not in body
     assert len(bills_db_module.list_suggestions(status="pending")) == pending_before
+
+
+def test_a_dropped_proposal_is_never_claimed_when_nothing_else_answers_a_question(live_client, modes_on, monkeypatch):
+    fake_model(monkeypatch, NETFLIX_AS_UPDATE)
+    fake_evidence(monkeypatch, error=ModeError("mcp_connection"))
+    pending_before = len(bills_db_module.list_suggestions(status="pending"))
+    response = live_client.post("/api/chat", json={"message": "When is Netflix due?"})
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["reply"] == chat_service.UNANSWERED_REPLY
+    assert payload["preview"] is None and payload["route"] == "plain"
+    assert len(bills_db_module.list_suggestions(status="pending")) == pending_before
+    assert bills_db_module.list_chat_messages()[-1]["content"] == chat_service.UNANSWERED_REPLY
+
+
+def test_the_chat_panel_shows_the_honest_line_not_the_dropped_proposals_sentence(live_client, modes_on, monkeypatch):
+    fake_model(monkeypatch, NETFLIX_AS_UPDATE)
+    fake_evidence(monkeypatch, error=ModeError("mcp_connection"))
+    body = _text(live_client.post("/ui/chat", data={"message": "When is Netflix due?"}))
+    assert chat_service.UNANSWERED_REPLY in body
+    assert "I've suggested" not in body and "Proposed:" not in body
+
+
+def test_a_dropped_proposal_is_never_claimed_with_the_modes_off(live_client, monkeypatch):
+    monkeypatch.setattr(config, "MCP_ENABLED", False)
+    monkeypatch.setattr(config, "RAG_ENABLED", False)
+    fake_model(monkeypatch, NETFLIX_AS_UPDATE)
+    payload = live_client.post("/api/chat", json={"message": "When is Netflix due?"}).get_json()
+    assert payload["reply"] == chat_service.UNANSWERED_REPLY and payload["preview"] is None
 
 
 def test_a_question_naming_a_bill_is_grounded_even_when_the_model_says_upcoming(live_client, modes_on, monkeypatch):

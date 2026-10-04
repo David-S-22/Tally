@@ -25,22 +25,29 @@ CONFIRMED_NOTE = ", flagged by Spending Alerts and confirmed by you"
 
 
 def bank_evidence(bill, opened_on):
-    """Up to EVIDENCE_ROWS bank facts for a letter, read through MCP: the merchant's charges in the EVIDENCE_WINDOW_DAYS before opened_on, the ones the user confirmed as suspicious first; None when MCP is off or either tool fails."""
+    """(rows, tools) for a letter, read through MCP: up to EVIDENCE_ROWS of the merchant's charges in the EVIDENCE_WINDOW_DAYS before opened_on, the ones the user confirmed as suspicious first, and the tools that answered; (None, []) when MCP is off or the comparison fails, and a failed anomalies call only drops the confirmed notes."""
     if not config.MCP_ENABLED:
-        return None
+        return None, []
     window = {"bill_id": bill.id, "start_date": (opened_on - timedelta(days=EVIDENCE_WINDOW_DAYS)).isoformat(), "end_date": opened_on.isoformat()}
     try:
         compared, _ms = tools_service.call_allowed_tool(COMPARE_TOOL, window)
-        flagged, _ms = tools_service.call_allowed_tool(CONFIRMED_ANOMALIES_TOOL, {})
     except ServiceError:
-        return None
+        return None, []
+    tools = [COMPARE_TOOL]
+    flagged = []
+    try:
+        flagged, _ms = tools_service.call_allowed_tool(CONFIRMED_ANOMALIES_TOOL, {})
+        tools.append(CONFIRMED_ANOMALIES_TOOL)
+    except ServiceError:
+        pass
     confirmed = {item["transaction"]["id"] for item in flagged}
     charges = sorted(compared.get("charges") or [], key=lambda c: c["date"], reverse=True)
     charges = sorted(charges, key=lambda c: c["id"] not in confirmed)
-    return [
+    rows = [
         f"{_day_month(date.fromisoformat(c['date']))} {bill.merchant} {money.format_actual(c['amount_cents'])}{CONFIRMED_NOTE if c['id'] in confirmed else ''}"
         for c in charges[:EVIDENCE_ROWS]
     ]
+    return rows, tools
 
 
 def policy_evidence(reason):
@@ -76,7 +83,7 @@ def _opened_on(dispute):
 def draft_for_bill(bill_row, reason, previous_letter=None, edited_letter=None, feedback=None, opened_on=None):
     bill = bills_db.row_to_bill(bill_row)
     payments = [bills_db.row_to_payment(r) for r in bills_db.list_bill_payments(bill.id)]
-    evidence = bank_evidence(bill, opened_on or config.DEMO_TODAY)
+    evidence, bank_tools = bank_evidence(bill, opened_on or config.DEMO_TODAY)
     policy = policy_evidence(reason)
     fallback = dispute_prompt.fallback_draft(bill, reason)
     data = guard.run(
@@ -99,7 +106,7 @@ def draft_for_bill(bill_row, reason, previous_letter=None, edited_letter=None, f
     data["evidence"] = {
         "bank": evidence or [],
         "policy": policy or [],
-        "tools": ([COMPARE_TOOL, CONFIRMED_ANOMALIES_TOOL] if evidence is not None else []) + ([tools_service.RETRIEVAL_TOOL] if policy is not None else []),
+        "tools": bank_tools + ([tools_service.RETRIEVAL_TOOL] if policy is not None else []),
     }
     return data
 

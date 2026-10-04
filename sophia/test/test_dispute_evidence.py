@@ -21,13 +21,15 @@ FLAGGED = [{"transaction": {"id": 22, "merchant": "Spotify AU", "amount": 13.99}
            {"transaction": {"id": 1, "merchant": "Harbourview Realty", "amount": 1100.0}, "anomaly": {"id": 1, "transaction_id": 1, "is_confirmed_by_user": True}}]
 
 
-def fake_tools(monkeypatch, error=None):
+def fake_tools(monkeypatch, error=None, anomalies_error=None):
     calls = []
 
     def call_tool(name, arguments):
         calls.append((name, arguments))
         if error:
             raise error
+        if anomalies_error and name == "get_transactions_with_confirmed_anomalies":
+            raise anomalies_error
         return ({"compare_bill_with_bank_charges": COMPARE, "get_transactions_with_confirmed_anomalies": FLAGGED}[name], 12.0)
 
     monkeypatch.setattr(mcp_server, "call_tool", call_tool)
@@ -49,17 +51,26 @@ def fake_draft(monkeypatch):
 
 def test_bank_evidence_lists_the_merchants_charges_confirmed_ones_first(monkeypatch):
     calls = fake_tools(monkeypatch)
-    rows = disputes.bank_evidence(SPOTIFY, date(2026, 9, 26))
+    rows, tools = disputes.bank_evidence(SPOTIFY, date(2026, 9, 26))
     assert rows == ["15 Jul Spotify AU $13.99, flagged by Spending Alerts and confirmed by you", "20 Aug Spotify AU $17.99", "8 Jul Spotify AU $13.99"]
+    assert tools == ["compare_bill_with_bank_charges", "get_transactions_with_confirmed_anomalies"]
     assert calls == [("compare_bill_with_bank_charges", {"bill_id": 3, "start_date": "2026-06-28", "end_date": "2026-09-26"}),
                      ("get_transactions_with_confirmed_anomalies", {})]
 
 
-def test_bank_evidence_is_none_when_mcp_is_off_or_fails(monkeypatch):
+def test_bank_evidence_is_none_with_no_tools_when_mcp_is_off_or_the_comparison_fails(monkeypatch):
     monkeypatch.setattr(config, "MCP_ENABLED", False)
-    assert disputes.bank_evidence(SPOTIFY, date(2026, 9, 26)) is None
+    assert disputes.bank_evidence(SPOTIFY, date(2026, 9, 26)) == (None, [])
     fake_tools(monkeypatch, error=ModeError("mcp_connection"))
-    assert disputes.bank_evidence(SPOTIFY, date(2026, 9, 26)) is None
+    assert disputes.bank_evidence(SPOTIFY, date(2026, 9, 26)) == (None, [])
+
+
+def test_bank_evidence_keeps_the_comparison_rows_when_only_the_anomalies_tool_fails(monkeypatch):
+    fake_tools(monkeypatch, anomalies_error=ModeError("mcp_tool_error"))
+    rows, tools = disputes.bank_evidence(SPOTIFY, date(2026, 9, 26))
+    assert rows == ["20 Aug Spotify AU $17.99", "15 Jul Spotify AU $13.99", "8 Jul Spotify AU $13.99"]
+    assert not any("flagged by Spending Alerts" in row for row in rows)
+    assert tools == ["compare_bill_with_bank_charges"]
 
 
 def test_draft_prompt_carries_the_bank_facts_only_when_there_are_some(monkeypatch):
@@ -190,7 +201,7 @@ def test_policy_evidence_is_none_when_rag_or_mcp_is_off_or_the_tool_fails(monkey
 def test_policy_evidence_is_none_for_a_malformed_payload_and_the_letter_still_drafts(monkeypatch):
     prompts = fake_draft(monkeypatch)
     monkeypatch.setattr(bills_db_module, "list_bill_payments", lambda bill_id: [])
-    monkeypatch.setattr(disputes, "bank_evidence", lambda bill, opened_on: None)
+    monkeypatch.setattr(disputes, "bank_evidence", lambda bill, opened_on: (None, []))
     good = chunk("billing_policy.pdf", PDF_TEXT, 1.0)
     payloads = [{"results": "x"}, {"results": [{"id": "a", "text": "t", "distance": 1.0}]}, {"results": [{**good, "text": None}]},
                 {"results": [{**good, "distance": None}]}, {}, [good], {"results": [{**good, "metadata": {}}]}]
@@ -273,6 +284,25 @@ def test_dispute_panel_shows_the_evidence_and_tools_under_the_letter(live_client
     assert "billing_policy.pdf" in body and "compare_bill_with_bank_charges" in body and "retrieve_context" in body
     latest = bills_db_module.list_dispute_drafts(bills_db_module.list_disputes()[-1]["id"])[-1]
     assert "evidence" in json.loads(latest["steps_json"])
+
+
+def test_draft_keeps_its_bank_facts_when_only_the_anomalies_tool_fails(monkeypatch):
+    fake_tools(monkeypatch, anomalies_error=ModeError("mcp_tool_error"))
+    fake_draft(monkeypatch)
+    monkeypatch.setattr(bills_db_module, "list_bill_payments", lambda bill_id: [])
+    draft = disputes.draft_for_bill(ROW, "Late fee added", opened_on=date(2026, 9, 26))
+    assert draft["evidence"]["bank"]
+    assert "compare_bill_with_bank_charges" in draft["evidence"]["tools"]
+    assert "get_transactions_with_confirmed_anomalies" not in draft["evidence"]["tools"]
+
+
+def test_dispute_panel_keeps_the_bank_evidence_when_only_the_anomalies_tool_fails(live_client, monkeypatch):
+    fake_tools(monkeypatch, anomalies_error=ModeError("mcp_tool_error"))
+    fake_draft(monkeypatch)
+    body = _text(live_client.post("/ui/disputes", data={"bill_id": "3", "reason": "Late fee added"}))
+    assert 'class="evidence-used"' in body
+    assert "20 Aug Spotify AU $17.99" in body and "compare_bill_with_bank_charges" in body
+    assert "get_transactions_with_confirmed_anomalies" not in body
 
 
 def test_seeded_drafts_and_mcp_off_drafts_show_no_evidence_block(live_client, monkeypatch):

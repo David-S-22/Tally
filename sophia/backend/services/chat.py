@@ -229,6 +229,8 @@ MISSING_FIELD_QUESTIONS = {
 
 CREATE_NEEDS_REPLY = "Happy to add that — I just need {wants}. I won't guess details you haven't given me."
 
+UNANSWERED_REPLY = "Tally couldn't answer that just now — nothing was changed."
+
 CADENCE_PHRASES = {
     "monthly": ("monthly", "a month", "per month", "each month", "every month", "/month", "/mo"),
     "weekly": ("weekly", "a week", "per week", "each week", "every week", "/week", "/wk"),
@@ -606,6 +608,8 @@ def _model_turn(model_message, history, fallback=None, stated=None, grounded=Tru
             route = "grounded"
     if not preview and not asks and CHANGE_VERB.search(model_message or ""):
         route = "ask_back"
+    if asks and route == "plain" and _build_preview(data) is not None:
+        reply = UNANSWERED_REPLY
     canonical_fields = None
     if preview:
         canonical_fields, reply_override = _vet_proposal(preview, reply, stated=stated)
