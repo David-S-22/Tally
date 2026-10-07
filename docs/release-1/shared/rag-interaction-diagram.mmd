@@ -1,0 +1,46 @@
+%% Shared RAG server architecture
+%% Source: ai-services/rag-server, ai-services/mcp-server, docker-compose.yml
+flowchart TB
+    subgraph Features["Feature backends (Docker, reach host via host.docker.internal)"]
+        direction LR
+        TX["Transactions :5001"]
+        AN["Anomalies :5004"]
+        BU["Budgets :5006"]
+        BI["Bills :5005"]
+        SA["Savings :5002"]
+    end
+
+    MCP["MCP server :8000/mcp<br/>tool: retrieve_context"]
+
+    subgraph RAG["Shared RAG server :5003 (Flask, runs on host)"]
+        direction TB
+        API["POST /retrieve<br/>{feature, question, k, where}<br/>similarity_search_with_score"]
+        REFRESH["POST /refresh<br/>{feature, ids, documents, metadatas}<br/>drop + rebuild collection"]
+        SRCREFRESH["POST /sources/refresh<br/>re-ingest all folders"]
+        LOCK{{"rag_lock<br/>one request at a time"}}
+        INGEST["corpus.py ingest<br/>.md: MarkdownTextSplitter 1000 chars<br/>.pdf: pypdf per page + RecursiveCharacterTextSplitter"]
+        STORE[("ChromaDB PersistentClient<br/>rag-server/chroma/<br/>one collection per feature<br/>default embedding model")]
+        API --> LOCK
+        REFRESH --> LOCK
+        SRCREFRESH --> LOCK
+        API -. "missing index segment:<br/>rebuild from sources/" .-> INGEST
+    end
+
+    DOCS[/"sources/ folders<br/>anomalies, billing, budgets,<br/>savings, transactions"/]
+    LLM["Ollama :11434<br/>generates the answer"]
+
+    TX -- "HTTP" --> API
+    AN -- "HTTP" --> API
+    BU -- "HTTP" --> API
+    BI -- "MCP" --> MCP
+    SA -- "MCP" --> MCP
+    MCP -- "HTTP" --> API
+
+    DOCS -- "on startup" --> INGEST
+    TX -. "transactions-records" .-> REFRESH
+    SRCREFRESH --> INGEST
+    INGEST -- "add_documents" --> STORE
+    LOCK -- "read / write" --> STORE
+
+    Features -- "prompt + retrieved chunks" --> LLM
+
