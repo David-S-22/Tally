@@ -1,0 +1,136 @@
+```mermaid
+flowchart LR
+    Start([Start])
+    Client[MCP Client<br/>AI Assistant / FastMCP Client]
+    Connect[Connect to MCP Server<br/>HTTP :8000]
+    Discover[List available tools and resources]
+    Request{Select MCP operation}
+    SerializeSuccess[Serialize successful result as MCP response]
+    SerializeError[Serialize error as MCP response]
+    DeliverSuccess[Send MCP response over HTTP]
+    DeliverError[Send MCP error over HTTP]
+    End([End])
+    ErrorEnd([End with error])
+
+    Start -->|Begin interaction| Client
+    Client -->|Start request| Connect
+    Connect -->|Session established| Discover
+    Discover -->|Tools/resources available| Request
+
+    subgraph MCP[MCP Server]
+        direction TB
+        Router[FastMCP request router]
+        Middleware[RequestLoggingMiddleware<br/>Log request and tool arguments]
+        Validation[Tool-specific validation]
+        Result[Assemble tool result]
+        Error[Create validation or backend error]
+    end
+
+    Request -->|Submit selected operation| Router
+    Router -->|Route MCP request| Middleware
+    Middleware -->|Forward request| Validation
+    Validation -->|Invalid input or range| Error
+    Error -->|Pass error to protocol layer| SerializeError
+    SerializeError -->|Create MCP error payload| DeliverError
+    DeliverError -->|Send HTTP error response| ErrorEnd
+    Result -->|Pass result to protocol layer| SerializeSuccess
+    SerializeSuccess -->|Create MCP result payload| DeliverSuccess
+    DeliverSuccess -->|Send HTTP response| End
+
+    Validation -->|Search transactions| Search[Build transaction query filters]
+    Search -->|GET /transactions| TransactionsDB[(Transactions DB<br/>HTTP :6001)]
+    TransactionsDB -->|Matching transaction records| SearchResult[Return matching transactions]
+    SearchResult -->|Format result| Result
+
+    Validation -->|Retrieve contextual documents| Context[Build retrieval request<br/>feature, question, k]
+    Context -->|POST /retrieve| RAG[(RAG Server<br/>HTTP :5003)]
+    RAG -->|Relevant documents and metadata| ContextResult[Return relevant documents]
+    ContextResult -->|Format result| Result
+
+    Validation -->|Get confirmed or rejected anomalies| AnomalyQuery[Request anomaly records]
+    AnomalyQuery -->|GET /anomalies| AnomaliesDB[(Anomalies DB<br/>HTTP :6004)]
+    AnomaliesDB -->|Anomaly records| FilterAnomalies[Filter by confirmation status]
+    FilterAnomalies -->|Matching anomaly IDs| TransactionLookup[Request all transactions]
+    TransactionLookup -->|GET /transactions| TransactionsDB
+    TransactionsDB -->|Transaction records| MatchAnomalies[Match anomalies to transactions]
+    MatchAnomalies -->|Combined transaction and anomaly data| AnomalyResult[Return transactions with anomaly status]
+    AnomalyResult -->|Format result| Result
+
+    Validation -->|List bills| BillList[Validate bill type]
+    BillList -->|GET /bills| BillsDB[(Bills DB<br/>HTTP :6005)]
+    BillsDB -->|All bill records| FilterBills[Filter bills by type]
+    FilterBills -->|Filtered bill records| BillListResult[Return bill list]
+    BillListResult -->|Format result| Result
+
+    Validation -->|Get bill payments| BillDetails[Request bill details]
+    BillDetails -->|GET /bills/:bill_id| BillsDB
+    BillsDB -->|Bill details| PaymentDetails[Request bill payments]
+    PaymentDetails -->|GET /bills/:bill_id/payments| BillsDB
+    BillsDB -->|Payment records| BillPaymentResult[Combine bill and payments]
+    BillPaymentResult -->|Format result| Result
+
+    Validation -->|Compare bill with bank charges| Compare[Validate bill ID and date range<br/>0 to 366 days]
+    Compare -->|Request bill and payment history| CompareBill[Request bill details and payments]
+    CompareBill -->|GET bill and payment endpoints| BillsDB
+    BillsDB -->|Bill and payment records| BankCharges[Request matching bank charges<br/>merchant and date range]
+    BankCharges -->|GET /transactions| TransactionsDB
+    TransactionsDB -->|Matching bank charges| Calculate[Convert amounts to cents<br/>and calculate differences]
+    Calculate -->|Bill, payments, and charge differences| CompareResult[Return comparison]
+    CompareResult -->|Format result| Result
+
+    Readme[Read docs://readme resource]
+    Discover -->|Read documentation| Readme
+    Readme -->|Documentation content| Result
+
+    subgraph TransactionsGroup[Transactions]
+        direction TB
+        Search
+        TransactionsDB
+        SearchResult
+        AnomalyQuery
+        AnomaliesDB
+        FilterAnomalies
+        TransactionLookup
+        MatchAnomalies
+        AnomalyResult
+        Compare
+        CompareBill
+        BankCharges
+        Calculate
+    end
+
+    subgraph BillsGroup[Bills]
+        direction TB
+        BillList
+        BillsDB
+        FilterBills
+        BillListResult
+        BillDetails
+        PaymentDetails
+        BillPaymentResult
+        CompareBill
+        CompareResult
+    end
+
+    subgraph DocsGroup[Documentation]
+        direction TB
+        Context
+        RAG
+        ContextResult
+        Readme
+    end
+
+    classDef client fill:#e1f5fe,stroke:#0288d1,color:#000
+    classDef server fill:#ede7f6,stroke:#673ab7,color:#000
+    classDef backend fill:#e8f5e9,stroke:#388e3c,color:#000
+    classDef operation fill:#fff3e0,stroke:#f57c00,color:#000
+    classDef error fill:#ffebee,stroke:#d32f2f,color:#000
+    classDef terminal fill:#f3e5f5,stroke:#8e24aa,color:#000
+
+    class Start,Client,Connect,Discover,Request client
+    class Router,Middleware,Validation,Result,SerializeSuccess,SerializeError,DeliverSuccess,DeliverError server
+    class TransactionsDB,RAG,AnomaliesDB,BillsDB backend
+    class Search,Context,AnomalyQuery,FilterAnomalies,TransactionLookup,MatchAnomalies,BillList,FilterBills,BillDetails,PaymentDetails,Compare,CompareBill,BankCharges,Calculate,Readme operation
+    class Error error
+    class End,ErrorEnd terminal
+```
