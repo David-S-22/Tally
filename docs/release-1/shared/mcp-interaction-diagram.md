@@ -1,3 +1,4 @@
+```mermaid
 %% Shared RAG server architecture
 %% Source: ai-services/rag-server, ai-services/mcp-server, docker-compose.yml
 flowchart TB
@@ -43,4 +44,4 @@ flowchart TB
     LOCK -- "read / write" --> STORE
 
     Features -- "prompt + retrieved chunks" --> LLM
-
+```
