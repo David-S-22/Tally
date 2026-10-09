@@ -9,15 +9,6 @@ on:
       - ".github/workflows/David-CI.yml"
       - "docker-compose.yml"
       - "shared/**"
-  push:
-    branches:
-      - "main"
-    paths:
-      - "david/**"
-      - ".github/workflows/David-CI.yml"
-      - "docker-compose.yml"
-      - "shared/**"
-
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
