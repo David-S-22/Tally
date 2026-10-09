@@ -211,10 +211,10 @@ services:
       OLLAMA_URL: http://ollama:11434
       CHAT_MODEL: qwen2.5:3b
       AI_TIMEOUT_SECONDS: 90
-      MCP_ENABLED: "true"
+      MCP_ENABLED: ${MCP_ENABLED:-true}
       MCP_SERVER_URL: http://host.docker.internal:8000/mcp
       MCP_TIMEOUT_SECONDS: 15
-      RAG_ENABLED: "true"
+      RAG_ENABLED: ${RAG_ENABLED:-true}
       RAG_SERVER_URL: http://host.docker.internal:5003
       RAG_FEATURE: budgets
       RAG_TOP_K: 3
