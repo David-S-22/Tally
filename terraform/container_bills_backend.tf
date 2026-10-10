@@ -67,6 +67,10 @@ resource "azurerm_container_app" "bills_backend" {
         value = var.enable_mcp ? "true" : "false"
       }
       env {
+        name  = "MCP_SERVER_URL"
+        value = "http://host.docker.internal:8000/mcp"
+      }
+      env {
         name  = "RAG_ENABLED"
         value = var.enable_rag ? "true" : "false"
       }

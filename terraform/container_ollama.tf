@@ -25,7 +25,7 @@ resource "azurerm_container_app" "ollama" {
   # No secret or registry block needed — pulls directly from public Docker Hub.
 
   template {
-    min_replicas = var.min_replicas
+    min_replicas = var.ollama_min_replicas
     max_replicas = 1
 
     volume {
@@ -56,6 +56,16 @@ resource "azurerm_container_app" "ollama" {
       volume_mounts {
         name = "ollama-vol"
         path = "/root/.ollama"
+      }
+
+      readiness_probe {
+        transport               = "HTTP"
+        port                    = 11434
+        path                    = "/"
+        interval_seconds        = 5
+        timeout                 = 3
+        failure_count_threshold = 10
+        success_count_threshold = 1
       }
     }
   }
