@@ -8,9 +8,10 @@ min_replicas                 = 0    # Set to 0 to enable scale-to-zero when idle
 
 # Ollama Configuration (pulls raw image directly from Docker Hub — NO custom Dockerfile needed)
 ollama_image                 = "ollama/ollama:latest"
-ollama_workload_profile_type = "D8" # Dedicated compute profile for Ollama
-ollama_cpu                   = 4.0
-ollama_memory                = "16Gi"
+ollama_workload_profile_type = "D4" # Dedicated compute profile for Ollama (D4 fits Azure for Students 4-core limit)
+ollama_cpu                   = 3.0  # Fits within D4 capacity after node OS overhead
+ollama_memory                = "12Gi"
+ollama_min_replicas          = 1    # Keep 1 replica warm to avoid model verification cold-starts
 ollama_models                = "qwen2.5:0.5b llama3.1:8b qwen2.5:3b qwen3:4b"
 
 # Standard Microservices Resources (must maintain valid ACA ratio: 0.5/1Gi, 1.0/2Gi, 2.0/4Gi)

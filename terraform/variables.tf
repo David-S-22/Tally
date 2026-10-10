@@ -29,21 +29,27 @@ variable "min_replicas" {
 }
 
 variable "ollama_workload_profile_type" {
-  description = "Workload profile compute SKU for Ollama (e.g. D4, D8, D16, or Consumption-GPU-NC8as-T4)"
+  description = "Workload profile compute SKU for Ollama (e.g. D4, D8, D16). Defaults to D4 to fit within standard Azure regional core limits (e.g. 4 cores on Azure for Students)."
   type        = string
-  default     = "D8"
+  default     = "D4"
 }
 
 variable "ollama_cpu" {
-  description = "vCPU allocated to Ollama"
+  description = "vCPU allocated to Ollama (must leave room for node system overhead, e.g. max ~3.5 on D4)"
   type        = number
-  default     = 4.0
+  default     = 3.0
 }
 
 variable "ollama_memory" {
-  description = "Memory allocated to Ollama"
+  description = "Memory allocated to Ollama (must leave room for node system overhead, e.g. max ~14Gi on D4)"
   type        = string
-  default     = "16Gi"
+  default     = "12Gi"
+}
+
+variable "ollama_min_replicas" {
+  description = "Minimum replicas for Ollama. Defaults to 1 since the dedicated VM profile is billed continuously and scaling to 0 causes long model verification cold-starts."
+  type        = number
+  default     = 1
 }
 
 variable "ollama_image" {

@@ -76,8 +76,28 @@ resource "azurerm_container_app" "budgets_backend" {
         value = var.enable_mcp ? "true" : "false"
       }
       env {
+        name  = "MCP_SERVER_URL"
+        value = "http://host.docker.internal:8000/mcp"
+      }
+      env {
+        name  = "MCP_TIMEOUT_SECONDS"
+        value = "15"
+      }
+      env {
         name  = "RAG_ENABLED"
         value = var.enable_rag ? "true" : "false"
+      }
+      env {
+        name  = "RAG_SERVER_URL"
+        value = "http://host.docker.internal:5003"
+      }
+      env {
+        name  = "RAG_FEATURE"
+        value = "budgets"
+      }
+      env {
+        name  = "RAG_TOP_K"
+        value = "3"
       }
     }
   }

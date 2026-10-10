@@ -52,9 +52,12 @@ terraform/
 
 ### Workload Profiles & Sizing
 
-- **Scale to Zero (`min_replicas = 0`):** By default, all apps are configured with `min_replicas = 0`, allowing them to scale down to zero when idle to save compute costs.
+- **Scale to Zero (`min_replicas = 0`):** Standard microservices are configured with `min_replicas = 0` on the serverless Consumption profile, scaling down to zero when idle to save costs.
 - **Standard Microservices (16 containers):** Run on the serverless **Consumption** profile (0.5 vCPU / 1Gi RAM per container). Azure Container Apps enforces a 1:2 vCPU-to-memory ratio on Consumption.
-- **Ollama LLM Engine:** Runs on a dedicated **`ollama-profile`** workload profile (`D8` node SKU = 8 vCPU / 32Gi) allocated 4 vCPU and 16Gi RAM to support LLM inference workloads.
+- **Ollama LLM Engine:** Runs on a dedicated **`ollama-profile`** workload profile (**`D4`** node SKU = 4 vCPU / 16Gi) allocated 3 vCPU and 12Gi RAM.
+  > [!NOTE]
+  > Default SKU is set to `D4` instead of `D8` because **Azure for Students** subscriptions have a default regional quota limit of **4 vCPUs** in `australiaeast`. A `D8` node SKU requires 8 vCPUs and will fail deployment with `QuotaExceeded`.
+  > `ollama_min_replicas` defaults to `1` because dedicated VM profiles are billed continuously regardless of container replica counts, and keeping Ollama warm avoids 30-60s model verification cold starts on Azure Files.
 
 ### Persistent Volume Mounts (Azure Files)
 
@@ -67,6 +70,9 @@ terraform/
 | `db-data` | 10 GB | `/app/data` | `budgets-db` | `budgets.db` SQLite database |
 | `db-data` | 10 GB | `/app/data` | `savings-db` | `savings.db` SQLite database |
 
+> [!WARNING]
+> **SQLite on Azure Files (SMB):** Azure Files SMB shares lack POSIX byte-range locking. All database containers are strictly capped at `max_replicas = 1` to prevent database corruption. Under high concurrent write traffic, SQLite can report `SQLITE_BUSY` (database locked).
+
 ---
 
 ## Key Azure Container Apps (ACA) Design Considerations
@@ -76,13 +82,18 @@ terraform/
 - **Azure Container Apps:** Each container app registers an internal DNS name. The internal Envoy ingress proxy intercepts HTTP requests on port 80 and routes them to the container's configured `target_port`.
 - **Rule:** All internal service URLs **must omit ports** (e.g. `http://transactions-backend`, `http://ollama`). Attempting to call `http://transactions-backend:5001` fails with connection refused because Envoy does not listen on port 5001.
 
-### 2. Ollama Setup (No Custom Dockerfile Needed)
+### 2. Reverse Proxy & Host Headers
+- In Azure Container Apps, Envoy routes incoming requests based on the HTTP `Host` header.
+- In NGINX reverse proxies (such as `shared-frontend`), forwarding `proxy_set_header Host $host;` will forward the outer gateway hostname to internal services, causing Envoy on internal containers to return `404 - Container App stopped or does not exist`.
+- Ensure internal proxies preserve or rewrite the Host header to match the destination container (e.g. `$proxy_host`).
+
+### 3. Ollama Setup (No Custom Dockerfile Needed)
 - Ollama uses the official **`ollama/ollama:latest`** image directly from public Docker Hub.
 - **No Dockerfile or custom image building is required.**
 - `container_ollama.tf` uses inline `command` and `args` to start `ollama serve` in the background, poll for readiness, pull all models in `OLLAMA_PULL_MODELS` into the persistent Azure Files mount (`/root/.ollama`), and wait on the server process.
-- No ACR `secret` or `registry` block is attached to Ollama, avoiding registry lookup errors.
+- Includes an HTTP `readiness_probe` on port 11434 to prevent traffic routing before Ollama starts serving.
 
-### 3. Strict Dependency Order
+### 4. Strict Dependency Order
 Terraform enforces strict provisioning order via explicit `depends_on` relationships:
 ```text
 Storage Accounts & File Shares
@@ -99,22 +110,36 @@ Storage Accounts & File Shares
               ▼
        Gateway (shared-frontend)
 ```
-- Databases and Ollama are fully provisioned before backends start.
-- Backends are fully provisioned before feature frontends start.
-- Feature frontends are fully provisioned before `shared-frontend` starts.
 
 ---
 
 ## Deployment Guide
 
-### 1. Azure Authentication
+### Option A: One-Command Automated Deployment (Recommended)
+
+Run the included automated deployment script:
+```bash
+./deploy.sh
+```
+This script handles:
+1. Validating Azure authentication.
+2. Authenticating to Azure Container Registry (`tallyasd21`).
+3. Building microservices with `docker compose build`.
+4. Tagging and pushing images to ACR.
+5. Importing any pre-existing Azure resources (`ASD-GROUP-21` and `tallyasd21`) into Terraform state.
+6. Executing `terraform init` and `terraform apply`.
+
+---
+
+### Option B: Manual Step-by-Step Deployment
+
+#### 1. Azure Authentication
 ```bash
 az login
 az account set --subscription "55258ab7-e42a-4438-8174-f1777c67a393"
 ```
 
-### 2. Build & Push Application Images to ACR
-*(Note: Ollama is pulled directly from Docker Hub and does not need to be built or pushed)*
+#### 2. Build & Push Application Images to ACR
 ```bash
 # Login to ACR (tallyasd21)
 az acr login --name tallyasd21
@@ -136,23 +161,26 @@ for s in shared-frontend \
 done
 ```
 
-### 3. Deploy via Terraform
+#### 3. Import Pre-existing Azure Resources (if already created in portal/CLI)
 ```bash
 cd terraform
-cp terraform.tfvars.example terraform.tfvars  # customize if needed
 terraform init
+
+# If ASD-GROUP-21 or tallyasd21 were pre-created:
+terraform import azurerm_resource_group.rg "/subscriptions/55258ab7-e42a-4438-8174-f1777c67a393/resourceGroups/ASD-GROUP-21"
+terraform import azurerm_container_registry.acr "/subscriptions/55258ab7-e42a-4438-8174-f1777c67a393/resourceGroups/ASD-GROUP-21/providers/Microsoft.ContainerRegistry/registries/tallyasd21"
+```
+
+#### 4. Deploy via Terraform
+```bash
+cp terraform.tfvars.example terraform.tfvars  # customize if needed
 terraform plan
 terraform apply
 ```
 
-### 4. Access Application
+#### 5. Access Application
 ```bash
 terraform output application_url
-```
-
-### 5. Retrieve ACR Admin Password (if needed for docker login)
-```bash
-terraform output -raw acr_admin_password
 ```
 
 ### Teardown

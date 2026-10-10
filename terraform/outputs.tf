@@ -15,7 +15,12 @@ output "acr_admin_password" {
 }
 
 output "application_url" {
-  description = "Public URL to access the Tally shared frontend"
+  description = "Public URL to access the Tally shared frontend (stable FQDN)"
+  value       = "https://${azurerm_container_app.shared_frontend.ingress[0].fqdn}"
+}
+
+output "application_latest_revision_url" {
+  description = "Public URL targeting the latest revision of the shared frontend"
   value       = "https://${azurerm_container_app.shared_frontend.latest_revision_fqdn}"
 }
 
