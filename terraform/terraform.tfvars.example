@@ -1,0 +1,23 @@
+resource_group_name          = "ASD-GROUP-21"
+location                     = "australiaeast"
+acr_name                     = "tallyasd21"
+environment_name             = "cae-tally"
+
+# Scale-to-Zero Configuration
+min_replicas                 = 0    # Set to 0 to enable scale-to-zero when idle
+
+# Ollama Configuration (pulls raw image directly from Docker Hub — NO custom Dockerfile needed)
+ollama_image                 = "ollama/ollama:latest"
+ollama_workload_profile_type = "D8" # Dedicated compute profile for Ollama
+ollama_cpu                   = 4.0
+ollama_memory                = "16Gi"
+ollama_models                = "qwen2.5:0.5b llama3.1:8b qwen2.5:3b qwen3:4b"
+
+# Standard Microservices Resources (must maintain valid ACA ratio: 0.5/1Gi, 1.0/2Gi, 2.0/4Gi)
+default_cpu                  = 0.5
+default_memory               = "1Gi"
+image_tag                    = "latest"
+
+# Optional feature flags
+enable_mcp                   = false
+enable_rag                   = false
