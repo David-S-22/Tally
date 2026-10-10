@@ -1,6 +1,15 @@
 services:
   ollama:
     image: ollama/ollama:latest
+    x-azure-deployment:
+      workloadProfileName: Ollama
+      resources:
+        # CPU-only allocation on the dedicated Ollama workload profile.
+        cpu: 4
+        memory: 16
+      scale:
+        minReplicas: 0
+        maxReplicas: 1
     container_name: ollama
     ports:
       - 11434:11434
@@ -24,6 +33,17 @@ services:
 
   shared-frontend:
     build: ./shared/frontend
+    image: ${ACR_NAME:-local}.azurecr.io/tally/shared-frontend:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 0
+        maxReplicas: 1
+      ingress:
+        external: true
+        allowInsecure: false
     container_name: shared-frontend
     ports:
       - 3000:3000
@@ -43,6 +63,14 @@ services:
 
   transactions-frontend:
     build: ./janelle/frontend
+    image: ${ACR_NAME:-local}.azurecr.io/tally/transactions-frontend:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 0
+        maxReplicas: 1
     container_name: transactions-frontend
     ports:
       - "3001:3001"
@@ -54,6 +82,14 @@ services:
     build:
       context: .
       dockerfile: janelle/backend/Dockerfile
+    image: ${ACR_NAME:-local}.azurecr.io/tally/transactions-backend:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 1
+        maxReplicas: 1
     container_name: transactions-backend
     ports:
       - "5001:5001"
@@ -83,6 +119,14 @@ services:
   transactions-db:
     build:
       dockerfile: ./janelle/database/Dockerfile
+    image: ${ACR_NAME:-local}.azurecr.io/tally/transactions-db:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 1
+        maxReplicas: 1
     container_name: transactions-db
     ports:
       - "6001:6001"
@@ -98,6 +142,14 @@ services:
 
   bills-frontend:
     build: ./sophia/frontend
+    image: ${ACR_NAME:-local}.azurecr.io/tally/bills-frontend:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 0
+        maxReplicas: 1
     container_name: bills-frontend
     ports:
       - "3005:80"
@@ -105,6 +157,14 @@ services:
       - bills-backend
   bills-backend:
     build: ./sophia/backend
+    image: ${ACR_NAME:-local}.azurecr.io/tally/bills-backend:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 1
+        maxReplicas: 1
     container_name: bills-backend
     ports:
       - "5005:5005"
@@ -124,6 +184,14 @@ services:
       - ollama
   bills-db:
     build: ./sophia/database
+    image: ${ACR_NAME:-local}.azurecr.io/tally/bills-db:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 1
+        maxReplicas: 1
     container_name: bills-db
     ports:
       - "6005:6005"
@@ -135,6 +203,14 @@ services:
 
   anomalies-frontend:
     build: ./aiden/frontend
+    image: ${ACR_NAME:-local}.azurecr.io/tally/anomalies-frontend:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 0
+        maxReplicas: 1
     container_name: anomalies-frontend
     ports:
       - 3004:3004
@@ -146,6 +222,14 @@ services:
   anomalies-backend:
     build:
       dockerfile: ./aiden/backend/Dockerfile
+    image: ${ACR_NAME:-local}.azurecr.io/tally/anomalies-backend:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 1
+        maxReplicas: 1
     container_name: anomalies-backend
     ports:
       - 5004:5004
@@ -172,6 +256,14 @@ services:
     build:
       context: .
       dockerfile: ./aiden/database/Dockerfile
+    image: ${ACR_NAME:-local}.azurecr.io/tally/anomalies-db:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 1
+        maxReplicas: 1
     container_name: anomalies-db
     ports:
       - 6004:6004
@@ -191,6 +283,14 @@ services:
 
   budgets-frontend:
     build: ./ethan/frontend
+    image: ${ACR_NAME:-local}.azurecr.io/tally/budgets-frontend:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 0
+        maxReplicas: 1
     container_name: budgets-frontend
     ports:
       - "3006:3006"
@@ -201,6 +301,14 @@ services:
       - budgets-backend
   budgets-backend:
     build: ./ethan/backend
+    image: ${ACR_NAME:-local}.azurecr.io/tally/budgets-backend:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 1
+        maxReplicas: 1
     container_name: budgets-backend
     ports:
       - "5006:5006"
@@ -227,6 +335,14 @@ services:
         condition: service_healthy
   budgets-db:
     build: ./ethan/database
+    image: ${ACR_NAME:-local}.azurecr.io/tally/budgets-db:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 1
+        maxReplicas: 1
     container_name: budgets-db
     ports:
       - "6006:6006"
@@ -240,6 +356,14 @@ services:
   savings-db:
     build: 
       dockerfile: ./david/database/Dockerfile
+    image: ${ACR_NAME:-local}.azurecr.io/tally/savings-db:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 1
+        maxReplicas: 1
     container_name: savings-db
     ports:
       - 6002:6002
@@ -252,6 +376,14 @@ services:
   savings-backend:
     build: 
       dockerfile: ./david/backend/Dockerfile
+    image: ${ACR_NAME:-local}.azurecr.io/tally/savings-backend:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 1
+        maxReplicas: 1
     container_name: savings-backend
     ports:
       - 5002:5002
@@ -277,6 +409,14 @@ services:
         condition: service_healthy
   savings-frontend:
     build: ./david/frontend/
+    image: ${ACR_NAME:-local}.azurecr.io/tally/savings-frontend:${IMAGE_TAG:-latest}
+    x-azure-deployment:
+      resources:
+        cpu: 2
+        memory: 4
+      scale:
+        minReplicas: 0
+        maxReplicas: 1
     container_name: savings-frontend
     ports:
       - 3002:3002
