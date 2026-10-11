@@ -3,7 +3,7 @@ using 'main.bicep'
 param location = 'australiaeast'
 param acrName = 'tallyasd21'
 param environmentName = 'cae-tally'
-param storageAccountPrefix = 'sttally'
+param storageAccountName = 'tallyasd21'
 
 // Scale-to-Zero Configuration
 param minReplicas = 0 // Set to 0 to enable scale-to-zero when idle

@@ -15,11 +15,8 @@ param acrName string = 'tallyasd21'
 @description('Name of the Azure Container Apps Managed Environment')
 param environmentName string = 'cae-tally'
 
-@description('Prefix for the Storage Account. Leave storageAccountName empty to auto-generate using this prefix.')
-param storageAccountPrefix string = 'sttally'
-
-@description('Optional explicit Storage Account name (must be globally unique, 3-24 lowercase alphanumeric chars)')
-param storageAccountName string = ''
+@description('Name of the Storage Account (must be globally unique, 3-24 lowercase alphanumeric chars)')
+param storageAccountName string = 'tallyasd21'
 
 @description('Minimum number of replicas for container apps (0 enables scale-to-zero when idle)')
 param minReplicas int = 0
@@ -61,8 +58,6 @@ param enableRag bool = false
 // 1. Base Infrastructure: Container Registry, Log Analytics, Storage
 // ==============================================================================
 
-var actualStorageAccountName = !empty(storageAccountName) ? storageAccountName : take('${storageAccountPrefix}${uniqueString(resourceGroup().id)}', 24)
-
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: toLower(acrName)
   location: location
@@ -85,7 +80,7 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
 }
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: actualStorageAccountName
+  name: storageAccountName
   location: location
   sku: {
     name: 'Standard_LRS'
