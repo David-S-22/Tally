@@ -1,18 +1,19 @@
 // ==============================================================================
-// Container App: ollama
-// Pulls raw image directly from Docker Hub — NO custom Dockerfile needed.
-// Auto-pulls models on startup via inline shell command and persists to Azure Files.
+// Module: Ollama LLM Engine
+// Runs on dedicated workload profile with persistent volume for models.
 // ==============================================================================
 
 param location string = resourceGroup().location
 param environmentId string
 param workloadProfileName string = 'ollama-profile'
 param ollamaStorageName string = 'ollama-storage'
-param ollamaCpu string = '4.0'
-param ollamaMemory string = '16Gi'
-param ollamaMinReplicas int = 0
-param ollamaImage string = 'ollama/ollama:latest'
-param ollamaModels string = 'qwen2.5:0.5b llama3.1:8b qwen2.5:3b qwen3:4b'
+param cpu string = '4.0'
+param memory string = '16Gi'
+param minReplicas int = 0
+param maxReplicas int = 1
+param image string = 'ollama/ollama:latest'
+param models string = 'qwen2.5:0.5b llama3.1:8b qwen2.5:3b qwen3:4b'
+param targetPort int = 11434
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'ollama'
@@ -23,7 +24,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       ingress: {
         external: false
-        targetPort: 11434
+        targetPort: targetPort
         allowInsecure: true
         traffic: [
           {
@@ -35,8 +36,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     }
     template: {
       scale: {
-        minReplicas: ollamaMinReplicas
-        maxReplicas: 1
+        minReplicas: minReplicas
+        maxReplicas: maxReplicas
       }
       volumes: [
         {
@@ -48,14 +49,11 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: 'ollama'
-          image: ollamaImage
+          image: image
           resources: {
-            cpu: json(ollamaCpu)
-            memory: ollamaMemory
+            cpu: json(cpu)
+            memory: memory
           }
-          // Inline startup command replaces the custom Dockerfile entrypoint script.
-          // Starts ollama serve in background, waits for daemon readiness, pulls all models
-          // listed in OLLAMA_PULL_MODELS into the persistent volume, then waits on the daemon.
           command: [
             '/bin/sh'
             '-c'
@@ -66,7 +64,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           env: [
             {
               name: 'OLLAMA_PULL_MODELS'
-              value: ollamaModels
+              value: models
             }
           ]
           volumeMounts: [
@@ -80,7 +78,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               type: 'Readiness'
               httpGet: {
                 path: '/'
-                port: 11434
+                port: targetPort
               }
               periodSeconds: 5
               timeoutSeconds: 3

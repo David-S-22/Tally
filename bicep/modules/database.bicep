@@ -1,7 +1,9 @@
 // ==============================================================================
-// Container App: bills-backend
+// Module: SQLite Database Microservice
+// Reusable template for all SQLite container services with Azure Files persistent volume.
 // ==============================================================================
 
+param name string
 param location string = resourceGroup().location
 param environmentId string
 param acrLoginServer string
@@ -9,14 +11,17 @@ param acrAdminUsername string
 @secure()
 param acrAdminPassword string
 param imageTag string = 'latest'
+param targetPort int
+param mountPath string = '/app/data'
+param dbStorageName string = 'db-storage'
+param env array = []
+param cpu string = '2.0'
+param memory string = '4Gi'
 param minReplicas int = 0
-param defaultCpu string = '2.0'
-param defaultMemory string = '4Gi'
-param enableMcp bool = false
-param enableRag bool = false
+param maxReplicas int = 1
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
-  name: 'bills-backend'
+  name: name
   location: location
   properties: {
     managedEnvironmentId: environmentId
@@ -24,7 +29,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       ingress: {
         external: false
-        targetPort: 5005
+        targetPort: targetPort
         allowInsecure: true
         traffic: [
           {
@@ -50,49 +55,28 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     template: {
       scale: {
         minReplicas: minReplicas
-        maxReplicas: 1
+        maxReplicas: maxReplicas
       }
+      volumes: [
+        {
+          name: 'db-vol'
+          storageType: 'AzureFile'
+          storageName: dbStorageName
+        }
+      ]
       containers: [
         {
-          name: 'bills-backend'
-          image: '${acrLoginServer}/bills-backend:${imageTag}'
+          name: name
+          image: '${acrLoginServer}/${name}:${imageTag}'
           resources: {
-            cpu: json(defaultCpu)
-            memory: defaultMemory
+            cpu: json(cpu)
+            memory: memory
           }
-          // Internal service discovery URLs without ports
-          env: [
+          env: env
+          volumeMounts: [
             {
-              name: 'PORT'
-              value: '5005'
-            }
-            {
-              name: 'BILLS_DB_API_URL'
-              value: 'http://bills-db'
-            }
-            {
-              name: 'FRONTEND_ORIGIN'
-              value: 'http://shared-frontend'
-            }
-            {
-              name: 'OLLAMA_URL'
-              value: 'http://ollama'
-            }
-            {
-              name: 'OLLAMA_KEEP_ALIVE'
-              value: '30m'
-            }
-            {
-              name: 'MCP_ENABLED'
-              value: enableMcp ? 'true' : 'false'
-            }
-            {
-              name: 'MCP_SERVER_URL'
-              value: 'http://host.docker.internal:8000/mcp'
-            }
-            {
-              name: 'RAG_ENABLED'
-              value: enableRag ? 'true' : 'false'
+              volumeName: 'db-vol'
+              mountPath: mountPath
             }
           ]
         }

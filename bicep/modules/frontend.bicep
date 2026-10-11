@@ -1,29 +1,34 @@
 // ==============================================================================
-// Container App: savings-db
+// Module: Frontend UI Microservice
+// Reusable template for all web UI container services and gateway reverse proxy.
 // ==============================================================================
 
+param name string
 param location string = resourceGroup().location
 param environmentId string
-param dbStorageName string = 'db-storage'
 param acrLoginServer string
 param acrAdminUsername string
 @secure()
 param acrAdminPassword string
 param imageTag string = 'latest'
+param targetPort int = 80
+param externalIngress bool = false
+param env array = []
+param cpu string = '2.0'
+param memory string = '4Gi'
 param minReplicas int = 0
-param defaultCpu string = '2.0'
-param defaultMemory string = '4Gi'
+param maxReplicas int = 1
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
-  name: 'savings-db'
+  name: name
   location: location
   properties: {
     managedEnvironmentId: environmentId
     workloadProfileName: 'Consumption'
     configuration: {
       ingress: {
-        external: false
-        targetPort: 6002
+        external: externalIngress
+        targetPort: targetPort
         allowInsecure: true
         traffic: [
           {
@@ -49,43 +54,17 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     template: {
       scale: {
         minReplicas: minReplicas
-        maxReplicas: 1
+        maxReplicas: maxReplicas
       }
-      volumes: [
-        {
-          name: 'db-vol'
-          storageType: 'AzureFile'
-          storageName: dbStorageName
-        }
-      ]
       containers: [
         {
-          name: 'savings-db'
-          image: '${acrLoginServer}/savings-db:${imageTag}'
+          name: name
+          image: '${acrLoginServer}/${name}:${imageTag}'
           resources: {
-            cpu: json(defaultCpu)
-            memory: defaultMemory
+            cpu: json(cpu)
+            memory: memory
           }
-          env: [
-            {
-              name: 'FLASK_ENV'
-              value: 'production'
-            }
-            {
-              name: 'PORT'
-              value: '6002'
-            }
-            {
-              name: 'DB_PATH'
-              value: '/app/data/savings.db'
-            }
-          ]
-          volumeMounts: [
-            {
-              volumeName: 'db-vol'
-              mountPath: '/app/data'
-            }
-          ]
+          env: env
         }
       ]
     }
@@ -94,3 +73,5 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
 
 output id string = containerApp.id
 output name string = containerApp.name
+output fqdn string = externalIngress ? containerApp.properties.configuration.ingress.fqdn : ''
+output latestRevisionFqdn string = externalIngress ? containerApp.properties.latestRevisionFqdn : ''

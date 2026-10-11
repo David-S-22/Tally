@@ -1,6 +1,6 @@
 targetScope = 'resourceGroup'
 
-metadata description = 'Tally — Azure Container Apps Infrastructure Deployment (Bicep)'
+metadata description = 'Tally — Azure Container Apps Infrastructure & Microservices Deployment'
 
 // ==============================================================================
 // Parameters
@@ -61,7 +61,6 @@ param enableRag bool = false
 // 1. Base Infrastructure: Container Registry, Log Analytics, Storage
 // ==============================================================================
 
-// Deterministic unique storage account name if not explicitly provided
 var actualStorageAccountName = !empty(storageAccountName) ? storageAccountName : take('${storageAccountPrefix}${uniqueString(resourceGroup().id)}', 24)
 
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
@@ -99,7 +98,6 @@ resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2023-05-01'
   name: 'default'
 }
 
-// Replaces docker-compose volume: ollama_data -> /root/.ollama
 resource ollamaShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
   parent: fileService
   name: 'ollama-data'
@@ -108,7 +106,6 @@ resource ollamaShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023
   }
 }
 
-// Replaces docker-compose volumes: transactions_data, bills_data, anomalies_data, etc.
 resource dbShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
   parent: fileService
   name: 'db-data'
@@ -140,7 +137,7 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
       {
         name: 'ollama-profile'
         workloadProfileType: ollamaWorkloadProfileType
-        minimumCount: 0
+        minimumCount: 1
         maximumCount: 2
       }
     ]
@@ -179,126 +176,187 @@ var acrAdminUsername = acr.listCredentials().username
 var acrAdminPassword = acr.listCredentials().passwords[0].value
 
 // ==============================================================================
-// 3. Container Modules Deployment
-// Provisioning order follows strict dependency graph:
-// Storage -> Databases & Ollama -> Backends -> Frontends -> Gateway
+// 3. Container Deployments using Reusable Modules
 // ==============================================================================
 
-// --- Ollama Engine ---
-module modOllama 'modules/container_ollama.bicep' = {
+// --- Ollama (Unique Workload Profile & Model Volume) ---
+module modOllama 'modules/ollama.bicep' = {
   name: 'deploy-ollama'
   params: {
     location: location
     environmentId: environment.id
     workloadProfileName: 'ollama-profile'
     ollamaStorageName: ollamaStorage.name
-    ollamaCpu: ollamaCpu
-    ollamaMemory: ollamaMemory
-    ollamaMinReplicas: ollamaMinReplicas
-    ollamaImage: ollamaImage
-    ollamaModels: ollamaModels
+    cpu: ollamaCpu
+    memory: ollamaMemory
+    minReplicas: ollamaMinReplicas
+    image: ollamaImage
+    models: ollamaModels
   }
 }
 
-// --- Databases ---
-module modTransactionsDb 'modules/container_transactions_db.bicep' = {
+// --- Databases (Reusable SQLite Module with Azure Files Mount) ---
+module modTransactionsDb 'modules/database.bicep' = {
   name: 'deploy-transactions-db'
   params: {
+    name: 'transactions-db'
     location: location
     environmentId: environment.id
+    targetPort: 6001
+    mountPath: '/app/data'
     dbStorageName: dbStorage.name
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
+    env: [
+      { name: 'FLASK_ENV', value: 'production' }
+      { name: 'PORT', value: '6001' }
+      { name: 'DB_PATH', value: '/app/data/transactions.db' }
+      { name: 'ANOMALIES_DB_URL', value: 'http://anomalies-db/anomalies' }
+      { name: 'ANOMALIES_TIMEOUT_SECONDS', value: '10' }
+      { name: 'SAVINGS_DB_URL', value: 'http://savings-db' }
+    ]
   }
 }
 
-module modBillsDb 'modules/container_bills_db.bicep' = {
+module modBillsDb 'modules/database.bicep' = {
   name: 'deploy-bills-db'
   params: {
+    name: 'bills-db'
     location: location
     environmentId: environment.id
+    targetPort: 6005
+    mountPath: '/data'
     dbStorageName: dbStorage.name
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
+    env: [
+      { name: 'PORT', value: '6005' }
+      { name: 'DB_PATH', value: '/data/bills.db' }
+    ]
   }
 }
 
-module modAnomaliesDb 'modules/container_anomalies_db.bicep' = {
+module modAnomaliesDb 'modules/database.bicep' = {
   name: 'deploy-anomalies-db'
   params: {
+    name: 'anomalies-db'
     location: location
     environmentId: environment.id
+    targetPort: 6004
+    mountPath: '/app/data'
     dbStorageName: dbStorage.name
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
+    env: [
+      { name: 'FLASK_ENV', value: 'production' }
+      { name: 'PORT', value: '6004' }
+      { name: 'DB_PATH', value: '/app/data/anomalies.db' }
+      { name: 'TRANSACTIONS_DB_URL', value: 'http://transactions-db' }
+      { name: 'TRANSACTIONS_TIMEOUT_SECONDS', value: '10' }
+      { name: 'RECONCILE_MAX_RETRIES', value: '30' }
+      { name: 'RECONCILE_RETRY_DELAY_SECONDS', value: '2' }
+    ]
   }
   dependsOn: [
     modTransactionsDb
   ]
 }
 
-module modBudgetsDb 'modules/container_budgets_db.bicep' = {
+module modBudgetsDb 'modules/database.bicep' = {
   name: 'deploy-budgets-db'
   params: {
+    name: 'budgets-db'
     location: location
     environmentId: environment.id
+    targetPort: 6006
+    mountPath: '/app/data'
     dbStorageName: dbStorage.name
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
+    env: [
+      { name: 'FLASK_ENV', value: 'production' }
+      { name: 'PORT', value: '6006' }
+      { name: 'DB_PATH', value: '/app/data/budgets.db' }
+    ]
   }
 }
 
-module modSavingsDb 'modules/container_savings_db.bicep' = {
+module modSavingsDb 'modules/database.bicep' = {
   name: 'deploy-savings-db'
   params: {
+    name: 'savings-db'
     location: location
     environmentId: environment.id
+    targetPort: 6002
+    mountPath: '/app/data'
     dbStorageName: dbStorage.name
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
+    env: [
+      { name: 'FLASK_ENV', value: 'production' }
+      { name: 'PORT', value: '6002' }
+      { name: 'DB_PATH', value: '/app/data/savings.db' }
+    ]
   }
 }
 
-// --- Backends ---
-module modTransactionsBackend 'modules/container_transactions_backend.bicep' = {
+// --- Backends (Reusable Backend API Module) ---
+module modTransactionsBackend 'modules/backend.bicep' = {
   name: 'deploy-transactions-backend'
   params: {
+    name: 'transactions-backend'
     location: location
     environmentId: environment.id
+    targetPort: 5001
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
-    enableMcp: enableMcp
-    enableRag: enableRag
+    env: [
+      { name: 'FLASK_ENV', value: 'production' }
+      { name: 'PORT', value: '5001' }
+      { name: 'TRANSACTIONS_DB_URL', value: 'http://transactions-db' }
+      { name: 'DATABASE_TIMEOUT_SECONDS', value: '20' }
+      { name: 'ANOMALIES_BACKEND_URL', value: 'http://anomalies-backend' }
+      { name: 'ANOMALIES_TIMEOUT_SECONDS', value: '10' }
+      { name: 'OLLAMA_URL', value: 'http://ollama' }
+      { name: 'CHAT_MODEL', value: 'qwen2.5:3b' }
+      { name: 'AGENT_MAX_ITERATIONS', value: '2' }
+      { name: 'AGENT_TRACE_ENABLED', value: 'true' }
+      { name: 'AGENT_LOG_ENABLED', value: 'true' }
+      { name: 'AGENT_REQUEST_TTL_SECONDS', value: '900' }
+      { name: 'AI_TIMEOUT_SECONDS', value: '90' }
+      { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
+      { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
+    ]
   }
   dependsOn: [
     modTransactionsDb
@@ -306,20 +364,30 @@ module modTransactionsBackend 'modules/container_transactions_backend.bicep' = {
   ]
 }
 
-module modBillsBackend 'modules/container_bills_backend.bicep' = {
+module modBillsBackend 'modules/backend.bicep' = {
   name: 'deploy-bills-backend'
   params: {
+    name: 'bills-backend'
     location: location
     environmentId: environment.id
+    targetPort: 5005
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
-    enableMcp: enableMcp
-    enableRag: enableRag
+    env: [
+      { name: 'PORT', value: '5005' }
+      { name: 'BILLS_DB_API_URL', value: 'http://bills-db' }
+      { name: 'FRONTEND_ORIGIN', value: 'http://shared-frontend' }
+      { name: 'OLLAMA_URL', value: 'http://ollama' }
+      { name: 'OLLAMA_KEEP_ALIVE', value: '30m' }
+      { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
+      { name: 'MCP_SERVER_URL', value: 'http://host.docker.internal:8000/mcp' }
+      { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
+    ]
   }
   dependsOn: [
     modBillsDb
@@ -327,20 +395,36 @@ module modBillsBackend 'modules/container_bills_backend.bicep' = {
   ]
 }
 
-module modAnomaliesBackend 'modules/container_anomalies_backend.bicep' = {
+module modAnomaliesBackend 'modules/backend.bicep' = {
   name: 'deploy-anomalies-backend'
   params: {
+    name: 'anomalies-backend'
     location: location
     environmentId: environment.id
+    targetPort: 5004
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
-    enableMcp: enableMcp
-    enableRag: enableRag
+    env: [
+      { name: 'FLASK_ENV', value: 'production' }
+      { name: 'PORT', value: '5004' }
+      { name: 'ANOMALIES_DB_URL', value: 'http://anomalies-db/anomalies' }
+      { name: 'TRANSACTIONS_DB_URL', value: 'http://transactions-db' }
+      { name: 'OLLAMA_URL', value: 'http://ollama/v1' }
+      { name: 'OLLAMA_MODEL', value: 'llama3.1:8b' }
+      { name: 'OLLAMA_LOG_LEVEL', value: 'DEBUG' }
+      { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
+      { name: 'MCP_SERVER_URL', value: 'http://host.docker.internal:8000/mcp' }
+      { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
+      { name: 'RAG_SERVER_URL', value: 'http://host.docker.internal:5003' }
+      { name: 'RAG_FEATURE', value: 'anomalies' }
+      { name: 'RAG_TOP_K', value: '3' }
+      { name: 'RAG_TIMEOUT_SECONDS', value: '15' }
+    ]
   }
   dependsOn: [
     modAnomaliesDb
@@ -348,20 +432,36 @@ module modAnomaliesBackend 'modules/container_anomalies_backend.bicep' = {
   ]
 }
 
-module modBudgetsBackend 'modules/container_budgets_backend.bicep' = {
+module modBudgetsBackend 'modules/backend.bicep' = {
   name: 'deploy-budgets-backend'
   params: {
+    name: 'budgets-backend'
     location: location
     environmentId: environment.id
+    targetPort: 5006
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
-    enableMcp: enableMcp
-    enableRag: enableRag
+    env: [
+      { name: 'FLASK_ENV', value: 'production' }
+      { name: 'PORT', value: '5006' }
+      { name: 'BUDGETS_DB_URL', value: 'http://budgets-db' }
+      { name: 'TRANSACTIONS_API_URL', value: 'http://transactions-backend' }
+      { name: 'OLLAMA_URL', value: 'http://ollama' }
+      { name: 'CHAT_MODEL', value: 'qwen2.5:3b' }
+      { name: 'AI_TIMEOUT_SECONDS', value: '90' }
+      { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
+      { name: 'MCP_SERVER_URL', value: 'http://host.docker.internal:8000/mcp' }
+      { name: 'MCP_TIMEOUT_SECONDS', value: '15' }
+      { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
+      { name: 'RAG_SERVER_URL', value: 'http://host.docker.internal:5003' }
+      { name: 'RAG_FEATURE', value: 'budgets' }
+      { name: 'RAG_TOP_K', value: '3' }
+    ]
   }
   dependsOn: [
     modBudgetsDb
@@ -369,20 +469,32 @@ module modBudgetsBackend 'modules/container_budgets_backend.bicep' = {
   ]
 }
 
-module modSavingsBackend 'modules/container_savings_backend.bicep' = {
+module modSavingsBackend 'modules/backend.bicep' = {
   name: 'deploy-savings-backend'
   params: {
+    name: 'savings-backend'
     location: location
     environmentId: environment.id
+    targetPort: 5002
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
-    enableMcp: enableMcp
-    enableRag: enableRag
+    env: [
+      { name: 'FLASK_ENV', value: 'production' }
+      { name: 'PORT', value: '5002' }
+      { name: 'DB_URL', value: 'http://savings-db' }
+      { name: 'TRANSACTIONS_DB_URL', value: 'http://transactions-db' }
+      { name: 'OLLAMA_URL', value: 'http://ollama/v1' }
+      { name: 'OLLAMA_MODEL', value: 'llama3.1:8b' }
+      { name: 'OLLAMA_CLASSIFIER_MODEL', value: 'qwen2.5:3b' }
+      { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
+      { name: 'MCP_SERVER_URL', value: 'http://host.docker.internal:8000/mcp' }
+      { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
+    ]
   }
   dependsOn: [
     modSavingsDb
@@ -391,91 +503,122 @@ module modSavingsBackend 'modules/container_savings_backend.bicep' = {
   ]
 }
 
-// --- Frontends ---
-module modTransactionsFrontend 'modules/container_transactions_frontend.bicep' = {
+// --- Frontends (Reusable Frontend Module) ---
+module modTransactionsFrontend 'modules/frontend.bicep' = {
   name: 'deploy-transactions-frontend'
   params: {
+    name: 'transactions-frontend'
     location: location
     environmentId: environment.id
+    targetPort: 3001
+    externalIngress: false
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
+    env: [
+      { name: 'PORT', value: '3001' }
+      { name: 'TRANSACTIONS_BACKEND_URL', value: 'http://transactions-backend' }
+    ]
   }
   dependsOn: [
     modTransactionsBackend
   ]
 }
 
-module modBillsFrontend 'modules/container_bills_frontend.bicep' = {
+module modBillsFrontend 'modules/frontend.bicep' = {
   name: 'deploy-bills-frontend'
   params: {
+    name: 'bills-frontend'
     location: location
     environmentId: environment.id
+    targetPort: 80
+    externalIngress: false
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
   }
   dependsOn: [
     modBillsBackend
   ]
 }
 
-module modAnomaliesFrontend 'modules/container_anomalies_frontend.bicep' = {
+module modAnomaliesFrontend 'modules/frontend.bicep' = {
   name: 'deploy-anomalies-frontend'
   params: {
+    name: 'anomalies-frontend'
     location: location
     environmentId: environment.id
+    targetPort: 3004
+    externalIngress: false
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
+    env: [
+      { name: 'PORT', value: '3004' }
+      { name: 'ANOMALIES_BACKEND_URL', value: 'http://anomalies-backend' }
+    ]
   }
   dependsOn: [
     modAnomaliesBackend
   ]
 }
 
-module modBudgetsFrontend 'modules/container_budgets_frontend.bicep' = {
+module modBudgetsFrontend 'modules/frontend.bicep' = {
   name: 'deploy-budgets-frontend'
   params: {
+    name: 'budgets-frontend'
     location: location
     environmentId: environment.id
+    targetPort: 3006
+    externalIngress: false
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
+    env: [
+      { name: 'PORT', value: '3006' }
+      { name: 'BUDGETS_BACKEND_URL', value: 'http://budgets-backend' }
+    ]
   }
   dependsOn: [
     modBudgetsBackend
   ]
 }
 
-module modSavingsFrontend 'modules/container_savings_frontend.bicep' = {
+module modSavingsFrontend 'modules/frontend.bicep' = {
   name: 'deploy-savings-frontend'
   params: {
+    name: 'savings-frontend'
     location: location
     environmentId: environment.id
+    targetPort: 3002
+    externalIngress: false
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
+    env: [
+      { name: 'PORT', value: '3002' }
+      { name: 'BACKEND_URL', value: 'http://savings-backend' }
+    ]
   }
   dependsOn: [
     modSavingsBackend
@@ -483,19 +626,30 @@ module modSavingsFrontend 'modules/container_savings_frontend.bicep' = {
   ]
 }
 
-// --- Shared Gateway Reverse Proxy ---
-module modSharedFrontend 'modules/container_shared_frontend.bicep' = {
+// --- Shared Gateway Frontend (External Ingress = true) ---
+module modSharedFrontend 'modules/frontend.bicep' = {
   name: 'deploy-shared-frontend'
   params: {
+    name: 'shared-frontend'
     location: location
     environmentId: environment.id
+    targetPort: 3000
+    externalIngress: true // The only public endpoint
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
+    cpu: defaultCpu
+    memory: defaultMemory
     minReplicas: minReplicas
-    defaultCpu: defaultCpu
-    defaultMemory: defaultMemory
+    env: [
+      { name: 'PORT', value: '3000' }
+      { name: 'TRANSACTIONS_FRONTEND_URL', value: 'http://transactions-frontend' }
+      { name: 'ANOMALIES_FRONTEND_URL', value: 'http://anomalies-frontend' }
+      { name: 'SAVINGS_FRONTEND_URL', value: 'http://savings-frontend' }
+      { name: 'BILLS_FRONTEND_URL', value: 'http://bills-frontend' }
+      { name: 'BUDGETS_FRONTEND_URL', value: 'http://budgets-frontend' }
+    ]
   }
   dependsOn: [
     modTransactionsFrontend

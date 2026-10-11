@@ -1,7 +1,9 @@
 // ==============================================================================
-// Container App: transactions-frontend
+// Module: Backend API Microservice
+// Reusable template for all backend API container services.
 // ==============================================================================
 
+param name string
 param location string = resourceGroup().location
 param environmentId string
 param acrLoginServer string
@@ -9,12 +11,15 @@ param acrAdminUsername string
 @secure()
 param acrAdminPassword string
 param imageTag string = 'latest'
+param targetPort int
+param env array = []
+param cpu string = '2.0'
+param memory string = '4Gi'
 param minReplicas int = 0
-param defaultCpu string = '2.0'
-param defaultMemory string = '4Gi'
+param maxReplicas int = 1
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
-  name: 'transactions-frontend'
+  name: name
   location: location
   properties: {
     managedEnvironmentId: environmentId
@@ -22,7 +27,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       ingress: {
         external: false
-        targetPort: 3001
+        targetPort: targetPort
         allowInsecure: true
         traffic: [
           {
@@ -48,26 +53,17 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     template: {
       scale: {
         minReplicas: minReplicas
-        maxReplicas: 1
+        maxReplicas: maxReplicas
       }
       containers: [
         {
-          name: 'transactions-frontend'
-          image: '${acrLoginServer}/transactions-frontend:${imageTag}'
+          name: name
+          image: '${acrLoginServer}/${name}:${imageTag}'
           resources: {
-            cpu: json(defaultCpu)
-            memory: defaultMemory
+            cpu: json(cpu)
+            memory: memory
           }
-          env: [
-            {
-              name: 'PORT'
-              value: '3001'
-            }
-            {
-              name: 'TRANSACTIONS_BACKEND_URL'
-              value: 'http://transactions-backend'
-            }
-          ]
+          env: env
         }
       ]
     }
