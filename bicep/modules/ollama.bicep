@@ -7,8 +7,8 @@ param location string = resourceGroup().location
 param environmentId string
 param workloadProfileName string = 'ollama-profile'
 param ollamaStorageName string = 'ollama-storage'
-param cpu string = '4.0'
-param memory string = '16Gi'
+param cpu string = '3.5'
+param memory string = '12Gi'
 param minReplicas int = 0
 param maxReplicas int = 1
 param image string = 'ollama/ollama:latest'
@@ -51,7 +51,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'ollama'
           image: image
           resources: {
-            cpu: json(cpu)
+            cpu: any(cpu)
             memory: memory
           }
           command: [
@@ -59,7 +59,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             '-c'
           ]
           args: [
-            'ollama serve & pid=$! ; echo \'[START] Waiting for ollama daemon...\' ; until ollama list >/dev/null 2>&1; do sleep 1; done ; echo \'[END] Waiting for ollama daemon.\' ; echo \'[START] Pulling models...\' ; for m in $OLLAMA_PULL_MODELS; do echo "[PULL] $m" ; ollama pull "$m" ; done ; echo \'[END] Pulling models.\' ; wait $pid'
+            'OLLAMA_HOST=127.0.0.1:11435 ollama serve & pid=$! ; echo "[START] Waiting for internal ollama daemon..." ; until OLLAMA_HOST=127.0.0.1:11435 ollama list >/dev/null 2>&1; do sleep 1; done ; echo "[END] Waiting for internal ollama daemon." ; echo "[START] Pulling models..." ; for m in $OLLAMA_PULL_MODELS; do echo "[PULL] $m" ; until OLLAMA_HOST=127.0.0.1:11435 ollama pull "$m"; do echo "[RETRY] Failed pulling $m, retrying in 3s..." ; sleep 3 ; done ; done ; echo "[END] Pulling models. All models verified on disk." ; kill $pid ; wait $pid 2>/dev/null ; echo "[READY] Starting public Ollama server on port 11434..." ; exec ollama serve'
           ]
           env: [
             {
@@ -75,6 +75,17 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           ]
           probes: [
             {
+              type: 'Startup'
+              httpGet: {
+                path: '/'
+                port: targetPort
+              }
+              initialDelaySeconds: 10
+              periodSeconds: 60
+              timeoutSeconds: 5
+              failureThreshold: 30
+            }
+            {
               type: 'Readiness'
               httpGet: {
                 path: '/'
@@ -82,7 +93,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               }
               periodSeconds: 5
               timeoutSeconds: 3
-              failureThreshold: 10
+              failureThreshold: 3
               successThreshold: 1
             }
           ]

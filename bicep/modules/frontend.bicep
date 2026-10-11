@@ -14,7 +14,7 @@ param imageTag string = 'latest'
 param targetPort int = 80
 param externalIngress bool = false
 param env array = []
-param cpu string = '2.0'
+param cpu int = 2
 param memory string = '4Gi'
 param minReplicas int = 0
 param maxReplicas int = 1
@@ -61,7 +61,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: name
           image: '${acrLoginServer}/${name}:${imageTag}'
           resources: {
-            cpu: json(cpu)
+            cpu: cpu
             memory: memory
           }
           env: env

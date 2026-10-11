@@ -25,13 +25,13 @@ param storageAccountName string = ''
 param minReplicas int = 0
 
 @description('Workload profile compute SKU for Ollama (e.g. D4, D8, D16)')
-param ollamaWorkloadProfileType string = 'D8'
+param ollamaWorkloadProfileType string = 'D4'
 
-@description('vCPU allocated to Ollama')
-param ollamaCpu string = '4.0'
+@description('vCPU allocated to Ollama (sized to fit D4 node allocatable capacity ~3.92 vCPU)')
+param ollamaCpu string = '3.5'
 
-@description('Memory allocated to Ollama')
-param ollamaMemory string = '16Gi'
+@description('Memory allocated to Ollama (sized to fit D4 node allocatable capacity ~13.4 GiB)')
+param ollamaMemory string = '12Gi'
 
 @description('Minimum replicas for Ollama (0 enables scale-to-zero when idle)')
 param ollamaMinReplicas int = 0
@@ -43,7 +43,7 @@ param ollamaImage string = 'ollama/ollama:latest'
 param ollamaModels string = 'qwen2.5:0.5b llama3.1:8b qwen2.5:3b qwen3:4b'
 
 @description('vCPU allocated to each standard microservice container')
-param defaultCpu string = '2.0'
+param defaultCpu int = 2
 
 @description('Memory allocated to each standard microservice container')
 param defaultMemory string = '4Gi'
