@@ -14,7 +14,7 @@ def test_frontend_proxies_only_to_backend():
     assert "location = /health" in nginx
     assert '{"ok":true,"container":"transactions-frontend"}' in nginx
     assert "location /transactions-backend/" in nginx
-    assert "proxy_pass http://transactions-backend:5001/;" in nginx
+    assert "proxy_pass ${TRANSACTIONS_BACKEND_URL}/;" in nginx
     # Long enough for a bounded agent chat request to finish.
     assert "proxy_read_timeout 200s;" in nginx
     assert "transactions-db" not in nginx
