@@ -24,23 +24,23 @@ param storageAccountName string = 'tallyasd21'
 @description('Minimum number of replicas for container apps (0 enables scale-to-zero when idle)')
 param minReplicas int = 0
 
-@description('Workload profile compute SKU for Ollama (e.g. D4, D8, D16)')
-param ollamaWorkloadProfileType string = 'D4'
+@description('Whether to provision the dedicated Ollama VM along with the container apps')
+param deployOllamaVm bool = true
 
-@description('vCPU allocated to Ollama (sized to fit D4 node allocatable capacity ~3.92 vCPU)')
-param ollamaCpu string = '3.5'
+@description('VM Compute SKU for Ollama (Standard_B4as_v2: 4 vCPU, 16 GiB RAM)')
+param ollamaVmSize string = 'Standard_B4as_v2'
 
-@description('Memory allocated to Ollama (sized to fit D4 node allocatable capacity ~13.4 GiB)')
-param ollamaMemory string = '12Gi'
+@description('SSH RSA Public Key for Ollama VM access')
+param adminPublicKey string = ''
 
-@description('Minimum replicas for Ollama (0 enables scale-to-zero when idle)')
-param ollamaMinReplicas int = 0
+@description('DNS label for Ollama VM public IP')
+param ollamaDnsLabel string = 'tally-ollama'
 
-@description('Container image for Ollama (pulls raw image directly from Docker Hub; no custom Dockerfile needed)')
-param ollamaImage string = 'ollama/ollama:latest'
+@description('Base URL for the external Ollama VM API')
+param ollamaUrl string = 'http://${ollamaDnsLabel}.${location}.cloudapp.azure.com:11434'
 
-@description('Models for Ollama to pull on startup')
-param ollamaModels string = 'qwen2.5:0.5b llama3.1:8b qwen2.5:3b qwen3:4b'
+@description('Daily auto-shutdown time in 24-hour format (0000 = 12:00 AM midnight AEST)')
+param autoShutdownTime string = '0000'
 
 @description('vCPU allocated to each standard microservice container')
 param defaultCpu int = 2
@@ -96,14 +96,6 @@ resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2023-05-01'
   name: 'default'
 }
 
-resource ollamaShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
-  parent: fileService
-  name: 'ollama-data'
-  properties: {
-    shareQuota: 100 // 100 GB for LLM model weights
-  }
-}
-
 resource dbShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
   parent: fileService
   name: 'db-data'
@@ -127,31 +119,6 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
         sharedKey: logs.listKeys().primarySharedKey
       }
     }
-    workloadProfiles: [
-      {
-        name: 'Consumption'
-        workloadProfileType: 'Consumption'
-      }
-      {
-        name: 'ollama-profile'
-        workloadProfileType: ollamaWorkloadProfileType
-        minimumCount: 0
-        maximumCount: 1
-      }
-    ]
-  }
-}
-
-resource ollamaStorage 'Microsoft.App/managedEnvironments/storages@2024-03-01' = {
-  parent: environment
-  name: 'ollama-storage'
-  properties: {
-    azureFile: {
-      accountName: storage.name
-      accountKey: storage.listKeys().keys[0].value
-      shareName: ollamaShare.name
-      accessMode: 'ReadWrite'
-    }
   }
 }
 
@@ -174,24 +141,23 @@ var acrAdminUsername = acr.listCredentials().username
 var acrAdminPassword = acr.listCredentials().passwords[0].value
 
 // ==============================================================================
-// 3. Container Deployments using Reusable Modules
+// 3. Dedicated Ollama Host VM (Conditional Provisioning)
 // ==============================================================================
 
-// --- Ollama (Unique Workload Profile & Model Volume) ---
-module modOllama 'modules/ollama.bicep' = {
-  name: 'deploy-ollama'
+module modOllamaVm 'modules/ollama-vm.bicep' = if (deployOllamaVm) {
+  name: 'deploy-ollama-vm'
   params: {
     location: location
-    environmentId: environment.id
-    workloadProfileName: 'ollama-profile'
-    ollamaStorageName: ollamaStorage.name
-    cpu: ollamaCpu
-    memory: ollamaMemory
-    minReplicas: ollamaMinReplicas
-    image: ollamaImage
-    models: ollamaModels
+    vmSize: ollamaVmSize
+    adminPublicKey: adminPublicKey
+    dnsLabel: ollamaDnsLabel
+    autoShutdownTime: autoShutdownTime
   }
 }
+
+// ==============================================================================
+// 4. Container Deployments using Reusable Modules
+// ==============================================================================
 
 // --- Databases (Reusable SQLite Module with Azure Files Mount) ---
 module modTransactionsDb 'modules/database.bicep' = {
@@ -345,7 +311,7 @@ module modTransactionsBackend 'modules/backend.bicep' = {
       { name: 'DATABASE_TIMEOUT_SECONDS', value: '20' }
       { name: 'ANOMALIES_BACKEND_URL', value: 'http://anomalies-backend' }
       { name: 'ANOMALIES_TIMEOUT_SECONDS', value: '10' }
-      { name: 'OLLAMA_URL', value: 'http://ollama' }
+      { name: 'OLLAMA_URL', value: ollamaUrl }
       { name: 'CHAT_MODEL', value: 'qwen2.5:3b' }
       { name: 'AGENT_MAX_ITERATIONS', value: '2' }
       { name: 'AGENT_TRACE_ENABLED', value: 'true' }
@@ -358,7 +324,6 @@ module modTransactionsBackend 'modules/backend.bicep' = {
   }
   dependsOn: [
     modTransactionsDb
-    modOllama
   ]
 }
 
@@ -380,7 +345,7 @@ module modBillsBackend 'modules/backend.bicep' = {
       { name: 'PORT', value: '5005' }
       { name: 'BILLS_DB_API_URL', value: 'http://bills-db' }
       { name: 'FRONTEND_ORIGIN', value: 'http://shared-frontend' }
-      { name: 'OLLAMA_URL', value: 'http://ollama' }
+      { name: 'OLLAMA_URL', value: ollamaUrl }
       { name: 'OLLAMA_KEEP_ALIVE', value: '30m' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
       { name: 'MCP_SERVER_URL', value: 'http://host.docker.internal:8000/mcp' }
@@ -389,7 +354,6 @@ module modBillsBackend 'modules/backend.bicep' = {
   }
   dependsOn: [
     modBillsDb
-    modOllama
   ]
 }
 
@@ -412,7 +376,7 @@ module modAnomaliesBackend 'modules/backend.bicep' = {
       { name: 'PORT', value: '5004' }
       { name: 'ANOMALIES_DB_URL', value: 'http://anomalies-db/anomalies' }
       { name: 'TRANSACTIONS_DB_URL', value: 'http://transactions-db' }
-      { name: 'OLLAMA_URL', value: 'http://ollama/v1' }
+      { name: 'OLLAMA_URL', value: '${ollamaUrl}/v1' }
       { name: 'OLLAMA_MODEL', value: 'llama3.1:8b' }
       { name: 'OLLAMA_LOG_LEVEL', value: 'DEBUG' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
@@ -426,7 +390,6 @@ module modAnomaliesBackend 'modules/backend.bicep' = {
   }
   dependsOn: [
     modAnomaliesDb
-    modOllama
   ]
 }
 
@@ -449,7 +412,7 @@ module modBudgetsBackend 'modules/backend.bicep' = {
       { name: 'PORT', value: '5006' }
       { name: 'BUDGETS_DB_URL', value: 'http://budgets-db' }
       { name: 'TRANSACTIONS_API_URL', value: 'http://transactions-backend' }
-      { name: 'OLLAMA_URL', value: 'http://ollama' }
+      { name: 'OLLAMA_URL', value: ollamaUrl }
       { name: 'CHAT_MODEL', value: 'qwen2.5:3b' }
       { name: 'AI_TIMEOUT_SECONDS', value: '90' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
@@ -463,7 +426,6 @@ module modBudgetsBackend 'modules/backend.bicep' = {
   }
   dependsOn: [
     modBudgetsDb
-    modOllama
   ]
 }
 
@@ -486,7 +448,7 @@ module modSavingsBackend 'modules/backend.bicep' = {
       { name: 'PORT', value: '5002' }
       { name: 'DB_URL', value: 'http://savings-db' }
       { name: 'TRANSACTIONS_DB_URL', value: 'http://transactions-db' }
-      { name: 'OLLAMA_URL', value: 'http://ollama/v1' }
+      { name: 'OLLAMA_URL', value: '${ollamaUrl}/v1' }
       { name: 'OLLAMA_MODEL', value: 'llama3.1:8b' }
       { name: 'OLLAMA_CLASSIFIER_MODEL', value: 'qwen2.5:3b' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
@@ -497,7 +459,6 @@ module modSavingsBackend 'modules/backend.bicep' = {
   dependsOn: [
     modSavingsDb
     modTransactionsDb
-    modOllama
   ]
 }
 
@@ -620,7 +581,6 @@ module modSavingsFrontend 'modules/frontend.bicep' = {
   }
   dependsOn: [
     modSavingsBackend
-    modOllama
   ]
 }
 
@@ -659,7 +619,7 @@ module modSharedFrontend 'modules/frontend.bicep' = {
 }
 
 // ==============================================================================
-// 4. Outputs
+// 5. Outputs
 // ==============================================================================
 
 @description('The login server for the Azure Container Registry')
@@ -674,10 +634,8 @@ output applicationLatestRevisionUrl string = 'https://${modSharedFrontend.output
 @description('Default domain for the Azure Container Apps environment')
 output environmentDefaultDomain string = environment.properties.defaultDomain
 
-@description('Workload profile assigned to Ollama')
-output ollamaProfile object = {
-  profileType: ollamaWorkloadProfileType
-  cpu: ollamaCpu
-  memory: ollamaMemory
-  image: ollamaImage
-}
+@description('Base URL for the external Ollama VM API')
+output ollamaUrl string = ollamaUrl
+
+@description('FQDN of the dedicated Ollama VM (empty if deployOllamaVm is false)')
+output ollamaVmFqdn string = modOllamaVm.?outputs.fqdn ?? ''

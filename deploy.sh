@@ -4,43 +4,159 @@ set -e
 ACR_NAME="tallyasd21"
 RESOURCE_GROUP="ASD-GROUP-21"
 LOGIN_SERVER="${ACR_NAME}.azurecr.io"
+VM_NAME="vm-tally-ollama"
+DNS_NAME="tally-ollama.australiaeast.cloudapp.azure.com"
+OLLAMA_PORT="11434"
+OLLAMA_URL="http://${DNS_NAME}:${OLLAMA_PORT}"
 
-echo "==> 1. Logging in to Azure Container Registry..."
-az acr login --name "$ACR_NAME"
+check_ollama_health() {
+    local response
+    response=$(curl -s -f --max-time 3 "${OLLAMA_URL}/api/tags" 2>/dev/null) || return 1
+    echo "$response" | grep -q '"models"' || return 1
+    return 0
+}
 
-echo "==> 2. Building and pushing microservice containers..."
-SERVICES=(
-    "transactions-db:janelle/database/Dockerfile:."
-    "transactions-backend:janelle/backend/Dockerfile:."
-    "transactions-frontend:janelle/frontend/Dockerfile:janelle/frontend"
-    "bills-db:sophia/database/Dockerfile:sophia/database"
-    "bills-backend:sophia/backend/Dockerfile:sophia/backend"
-    "bills-frontend:sophia/frontend/Dockerfile:sophia/frontend"
-    "anomalies-db:aiden/database/Dockerfile:."
-    "anomalies-backend:aiden/backend/Dockerfile:."
-    "anomalies-frontend:aiden/frontend/Dockerfile:aiden/frontend"
-    "budgets-db:ethan/database/Dockerfile:ethan/database"
-    "budgets-backend:ethan/backend/Dockerfile:ethan/backend"
-    "budgets-frontend:ethan/frontend/Dockerfile:ethan/frontend"
-    "savings-db:david/database/Dockerfile:."
-    "savings-backend:david/backend/Dockerfile:."
-    "savings-frontend:david/frontend/Dockerfile:david/frontend"
-    "shared-frontend:shared/frontend/Dockerfile:shared/frontend"
-)
+wait_for_ollama_ready() {
+    local timeout_secs="${1:-300}"
+    local interval=5
+    local elapsed=0
 
-for item in "${SERVICES[@]}"; do
-    IFS=':' read -r name dockerfile ctx <<< "$item"
-    echo "--> Building $name..."
-    docker build --platform linux/amd64 -t "$LOGIN_SERVER/$name:latest" -f "$dockerfile" "$ctx"
-    echo "--> Pushing $name..."
-    docker push "$LOGIN_SERVER/$name:latest"
-done
+    echo "==> Running health check on Ollama VM (${OLLAMA_URL}/api/tags)..."
+    while [ $elapsed -lt $timeout_secs ]; do
+        if check_ollama_health; then
+            local model_count
+            model_count=$(curl -s "${OLLAMA_URL}/api/tags" 2>/dev/null | grep -o '"name":' | wc -l)
+            if [ "$model_count" -ge 1 ]; then
+                echo "==> [HEALTHY] Ollama VM is ready! ($model_count model(s) available)"
+                return 0
+            else
+                echo "--> Ollama service is up, waiting for models to finish downloading (${elapsed}s)..."
+            fi
+        else
+            echo "--> Waiting for Ollama VM endpoint to come online (${elapsed}s / max ${timeout_secs}s)..."
+        fi
+        sleep $interval
+        elapsed=$((elapsed + interval))
+    done
 
-echo "==> 3. Deploying Bicep template to Azure Container Apps..."
-az deployment group create \
-    --resource-group "$RESOURCE_GROUP" \
-    --template-file bicep/main.bicep \
-    --parameters bicep/main.bicepparam \
-    --rollback-on-error
+    echo "WARNING: Timed out waiting for Ollama health check (${timeout_secs}s)."
+    echo "Containers may experience temporary AI errors while models finish downloading."
+    return 1
+}
+
+show_health() {
+    echo "==> Checking Ollama VM health at ${OLLAMA_URL}..."
+    if check_ollama_health; then
+        echo "[HEALTHY] Ollama VM is online and responding."
+        echo "Available Models:"
+        curl -s "${OLLAMA_URL}/api/tags" | jq -r '.models[]? | "  - \(.name)"' 2>/dev/null || curl -s "${OLLAMA_URL}/api/tags"
+    else
+        echo "[UNAVAILABLE] Ollama VM is currently unreachable or offline."
+        echo "To start the VM: az vm start --resource-group $RESOURCE_GROUP --name $VM_NAME"
+    fi
+}
+
+TARGET="${1:-all}"
+
+case "$TARGET" in
+    --health|health)
+        show_health
+        exit 0
+        ;;
+    --containers|containers)
+        DEPLOY_CONTAINERS=true
+        DEPLOY_VM=false
+        ;;
+    --vm|vm)
+        DEPLOY_CONTAINERS=false
+        DEPLOY_VM=true
+        ;;
+    --all|all|"")
+        DEPLOY_CONTAINERS=true
+        DEPLOY_VM=true
+        ;;
+    *)
+        echo "Usage: ./deploy.sh [all | containers | vm | health]"
+        echo ""
+        echo "Options:"
+        echo "  all         Deploy Ollama VM, verify health, then deploy containers (default)"
+        echo "  containers  Deploy microservice containers only (skip VM)"
+        echo "  vm          Deploy Ollama VM only and wait for health check"
+        echo "  health      Check current health and models of the Ollama VM"
+        exit 1
+        ;;
+esac
+
+# --- Pre-flight Health Notice for Containers ---
+if [ "$DEPLOY_CONTAINERS" = true ] && [ "$DEPLOY_VM" = false ]; then
+    echo "==> Checking if Ollama VM is currently accessible..."
+    if check_ollama_health; then
+        echo "==> Ollama VM is online and healthy."
+    else
+        echo "WARNING: Ollama VM is currently unreachable."
+        echo "Container apps will deploy, but AI calls will fail until the VM is started."
+        echo "To start the VM: az vm start --resource-group $RESOURCE_GROUP --name $VM_NAME"
+    fi
+fi
+
+# --- Step 1: Provision VM if requested ---
+if [ "$DEPLOY_VM" = true ]; then
+    echo "==> 1. Provisioning Ollama VM via Bicep (Standard_B4as_v2 / australiaeast)..."
+    PARAMS=()
+    if [ -f "$HOME/.ssh/id_rsa.pub" ]; then
+        PARAMS+=("--parameters" "adminPublicKey=$(cat "$HOME/.ssh/id_rsa.pub")")
+    fi
+    az deployment group create \
+        --resource-group "$RESOURCE_GROUP" \
+        --template-file bicep/modules/ollama-vm.bicep \
+        "${PARAMS[@]}" \
+        --rollback-on-error
+
+    # Health check: Wait for VM to be ready before containers try to access it
+    wait_for_ollama_ready 300 || true
+fi
+
+# --- Step 2: Build & Push Containers if requested ---
+if [ "$DEPLOY_CONTAINERS" = true ]; then
+    echo "==> 2. Logging in to Azure Container Registry..."
+    az acr login --name "$ACR_NAME"
+
+    echo "==> 3. Building and pushing microservice containers..."
+    SERVICES=(
+        "transactions-db:janelle/database/Dockerfile:."
+        "transactions-backend:janelle/backend/Dockerfile:."
+        "transactions-frontend:janelle/frontend/Dockerfile:janelle/frontend"
+        "bills-db:sophia/database/Dockerfile:sophia/database"
+        "bills-backend:sophia/backend/Dockerfile:sophia/backend"
+        "bills-frontend:sophia/frontend/Dockerfile:sophia/frontend"
+        "anomalies-db:aiden/database/Dockerfile:."
+        "anomalies-backend:aiden/backend/Dockerfile:."
+        "anomalies-frontend:aiden/frontend/Dockerfile:aiden/frontend"
+        "budgets-db:ethan/database/Dockerfile:ethan/database"
+        "budgets-backend:ethan/backend/Dockerfile:ethan/backend"
+        "budgets-frontend:ethan/frontend/Dockerfile:ethan/frontend"
+        "savings-db:david/database/Dockerfile:."
+        "savings-backend:david/backend/Dockerfile:."
+        "savings-frontend:david/frontend/Dockerfile:david/frontend"
+        "shared-frontend:shared/frontend/Dockerfile:shared/frontend"
+    )
+
+    for item in "${SERVICES[@]}"; do
+        IFS=':' read -r name dockerfile ctx <<< "$item"
+        echo "--> Building $name..."
+        docker build --platform linux/amd64 -t "$LOGIN_SERVER/$name:latest" -f "$dockerfile" "$ctx"
+        echo "--> Pushing $name..."
+        docker push "$LOGIN_SERVER/$name:latest"
+    done
+
+    # --- Step 3: Deploy Container Apps ---
+    echo "==> 4. Deploying Container Apps to Azure..."
+    az deployment group create \
+        --resource-group "$RESOURCE_GROUP" \
+        --template-file bicep/main.bicep \
+        --parameters bicep/main.bicepparam \
+        --parameters deployOllamaVm=false \
+        --rollback-on-error
+fi
 
 echo "==> Deployment completed successfully!"
