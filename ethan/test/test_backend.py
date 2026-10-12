@@ -561,6 +561,204 @@ def test_chat_service_rewrites_direct_change_wording_to_proposal_review(monkeypa
     assert stored["rationale"] == result["reply"]
 
 
+def test_chat_service_rewrites_proposal_reply_when_displayed_values_do_not_match_payload(monkeypatch):
+    monkeypatch.setattr(db_api, "get_budget", lambda _budget_id: {"id": 1, "month": "2026-09"})
+    monkeypatch.setattr(
+        summary_service,
+        "build_budget_summary",
+        lambda _budget_id: {
+            "budget": {"id": 1, "month": "2026-09", "declared_income": 560000},
+            "totals": {
+                "declared_income": 560000,
+                "actual_spend_total": 24000,
+                "planned_est_high_total": 12000,
+                "remaining_income_high": 524000,
+            },
+            "budget_lines": [
+                {
+                    "id": 7,
+                    "category": "Groceries",
+                    "actual_spend": 24000,
+                    "planned_est_high_total": 12000,
+                    "projected_high_total": 36000,
+                    "warn_at": 20000,
+                    "hard_cap": 25000,
+                },
+            ],
+            "transactions": {"other_expenses": []},
+        },
+    )
+    stored = {}
+
+    def create_coach_proposal(_budget_id, payload):
+        stored.update(payload)
+        return {
+            "id": 41,
+            "budget_id": 1,
+            "proposal_json": payload["proposal_json"],
+            "rationale": payload["rationale"],
+            "status": "proposed",
+        }, 201
+
+    monkeypatch.setattr(db_api, "create_coach_proposal", create_coach_proposal)
+    monkeypatch.setattr(
+        guard,
+        "run",
+        lambda *_args, **_kwargs: {
+            "mode": "proposal",
+            "say": (
+                "I prepared a proposal to adjust the Groceries category. "
+                "The warning threshold will be moved to $110.00 and the hard cap to $150.00 "
+                "to reflect your planned spend of $120.00."
+            ),
+            "question": None,
+            "proposal": {
+                "proposal_type": "adjust_budget_line_thresholds",
+                "operations": [
+                    {
+                        "action": "update_budget_line",
+                        "budget_line_id": 7,
+                        "category": "Groceries",
+                        "fields": {"warn_at": 1100, "hard_cap": 1500},
+                    }
+                ],
+            },
+            "fallback": False,
+        },
+    )
+
+    result = chat_service.send_message(1, "what should i do about groceries?")
+
+    assert result["mode"] == "proposal"
+    assert result["reply"] == "I revised the proposal to move Groceries's warning amount to $11.00 and hard cap to $15.00 for your review."
+    assert stored["rationale"] == result["reply"]
+
+
+def test_chat_service_treats_explicit_groceries_proposal_request_as_adjustment(monkeypatch):
+    monkeypatch.setattr(db_api, "get_budget", lambda _budget_id: {"id": 1, "month": "2026-09"})
+    monkeypatch.setattr(
+        summary_service,
+        "build_budget_summary",
+        lambda _budget_id: {
+            "budget": {"id": 1, "month": "2026-09", "declared_income": 560000},
+            "totals": {
+                "declared_income": 560000,
+                "actual_spend_total": 24000,
+                "planned_est_high_total": 12000,
+                "remaining_income_high": 524000,
+            },
+            "budget_lines": [
+                {
+                    "id": 7,
+                    "category": "Groceries",
+                    "actual_spend": 24000,
+                    "planned_est_high_total": 12000,
+                    "projected_high_total": 36000,
+                    "warn_at": 20000,
+                    "hard_cap": 25000,
+                },
+            ],
+            "coach_proposals": [],
+            "transactions": {"other_expenses": []},
+        },
+    )
+    stored = {}
+
+    def create_coach_proposal(_budget_id, payload):
+        stored.update(payload)
+        return {
+            "id": 42,
+            "budget_id": 1,
+            "proposal_json": payload["proposal_json"],
+            "rationale": payload["rationale"],
+            "status": "proposed",
+        }, 201
+
+    monkeypatch.setattr(db_api, "create_coach_proposal", create_coach_proposal)
+    monkeypatch.setattr(guard, "run", lambda *args, **kwargs: pytest.fail("guard should not be called"))
+
+    result = chat_service.send_message(1, "make a proposal so I can spend an extra $150 in groceries")
+
+    fields = stored["proposal_json"]["operations"][0]["fields"]
+    assert result["response_source"] == "deterministic"
+    assert result["mode"] == "proposal"
+    assert stored["proposal_json"]["operations"][0]["budget_line_id"] == 7
+    assert stored["proposal_json"]["operations"][0]["category"] == "Groceries"
+    assert "Groceries" in result["reply"]
+    assert "that budget line" not in result["reply"]
+    assert "warn_at" in fields
+    assert "hard_cap" in fields
+
+
+def test_chat_service_hydrates_ollama_proposal_category_from_budget_line(monkeypatch):
+    monkeypatch.setattr(db_api, "get_budget", lambda _budget_id: {"id": 1, "month": "2026-09"})
+    monkeypatch.setattr(
+        summary_service,
+        "build_budget_summary",
+        lambda _budget_id: {
+            "budget": {"id": 1, "month": "2026-09", "declared_income": 560000},
+            "totals": {
+                "declared_income": 560000,
+                "actual_spend_total": 24000,
+                "planned_est_high_total": 12000,
+                "remaining_income_high": 524000,
+            },
+            "budget_lines": [
+                {
+                    "id": 7,
+                    "category": "Groceries",
+                    "actual_spend": 24000,
+                    "planned_est_high_total": 12000,
+                    "projected_high_total": 36000,
+                    "warn_at": 20000,
+                    "hard_cap": 25000,
+                },
+            ],
+            "transactions": {"other_expenses": []},
+        },
+    )
+    stored = {}
+
+    def create_coach_proposal(_budget_id, payload):
+        stored.update(payload)
+        return {
+            "id": 43,
+            "budget_id": 1,
+            "proposal_json": payload["proposal_json"],
+            "rationale": payload["rationale"],
+            "status": "proposed",
+        }, 201
+
+    monkeypatch.setattr(db_api, "create_coach_proposal", create_coach_proposal)
+    monkeypatch.setattr(
+        guard,
+        "run",
+        lambda *_args, **_kwargs: {
+            "mode": "proposal",
+            "say": "I revised the proposal to move that budget line's warning amount to $25.00 for your review.",
+            "question": None,
+            "proposal": {
+                "proposal_type": "adjust_budget_line_thresholds",
+                "operations": [
+                    {
+                        "action": "update_budget_line",
+                        "budget_line_id": 7,
+                        "fields": {"warn_at": 2500},
+                    }
+                ],
+            },
+            "fallback": False,
+        },
+    )
+
+    result = chat_service.send_message(1, "make a proposal so I can spend an extra $150 in groceries", skip_deterministic=True)
+
+    assert result["response_source"] == "ollama"
+    assert stored["proposal_json"]["operations"][0]["category"] == "Groceries"
+    assert result["reply"] == "I revised the proposal to move Groceries's warning amount to $25.00 for your review."
+    assert "that budget line" not in result["reply"]
+
+
 def test_chat_service_summarises_budget_with_grounded_data(monkeypatch):
     monkeypatch.setattr(db_api, "get_budget", lambda _budget_id: {"id": 1, "month": "2026-09"})
     monkeypatch.setattr(

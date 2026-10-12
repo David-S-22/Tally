@@ -526,6 +526,13 @@ def _looks_like_adjustment_message(summary: dict, message: str) -> bool:
         "budget" in lowered or "budgets" in lowered or "income" in lowered or "spending" in lowered
     ):
         return True
+    if "proposal" in lowered and _extract_line_from_text(summary, lowered) is not None and (
+        _find_amount_cents(lowered) is not None
+        or "extra" in lowered
+        or "more" in lowered
+        or "spend" in lowered
+    ):
+        return True
     direction = _extract_adjustment_direction(lowered)
     if direction is not None and (
         "budget" in lowered
@@ -1138,11 +1145,79 @@ def _proposal_review_say(proposal: dict, preferred_intro: str | None = None) -> 
     return f"{intro} to {body} for your review."
 
 
+def _proposal_line(summary: dict, operation: dict) -> dict | None:
+    line_id = operation.get("budget_line_id")
+    category = operation.get("category")
+    if isinstance(line_id, int):
+        for line in _budget_lines(summary):
+            if line.get("id") == line_id:
+                return line
+    if isinstance(category, str) and category.strip():
+        target = category.casefold().strip()
+        for line in _budget_lines(summary):
+            line_category = line.get("category")
+            if isinstance(line_category, str) and line_category.casefold().strip() == target:
+                return line
+    return None
+
+
+def _hydrate_proposal(summary: dict, proposal: dict | None) -> dict | None:
+    if not isinstance(proposal, dict):
+        return proposal
+    operations = _proposal_operations(proposal)
+    if not operations:
+        return proposal
+    hydrated_operations: list[dict] = []
+    changed = False
+    for operation in operations:
+        next_operation = dict(operation)
+        line = _proposal_line(summary, operation)
+        if line is not None:
+            line_id = line.get("id")
+            category = line.get("category")
+            if not isinstance(next_operation.get("budget_line_id"), int) and isinstance(line_id, int):
+                next_operation["budget_line_id"] = line_id
+                changed = True
+            if (not isinstance(next_operation.get("category"), str) or not str(next_operation.get("category")).strip()) and isinstance(category, str) and category.strip():
+                next_operation["category"] = category
+                changed = True
+        hydrated_operations.append(next_operation)
+    if not changed:
+        return proposal
+    hydrated = dict(proposal)
+    hydrated["operations"] = hydrated_operations
+    if not isinstance(hydrated.get("summary"), str) or not str(hydrated.get("summary")).strip():
+        first_category = hydrated_operations[0].get("category")
+        if isinstance(first_category, str) and first_category.strip():
+            hydrated["summary"] = f"Review {first_category} warning and hard-cap values."
+    return hydrated
+
+
+def _proposal_reply_matches_payload(proposal: dict, say: str) -> bool:
+    operations = _proposal_operations(proposal)
+    if not operations:
+        return True
+    operation = operations[0]
+    fields = operation.get("fields") if isinstance(operation.get("fields"), dict) else {}
+    lowered = say.casefold()
+    category = operation.get("category")
+    if isinstance(category, str) and category.strip() and category.strip().casefold() not in lowered:
+        return False
+    warn_at = fields.get("warn_at") if isinstance(fields.get("warn_at"), int) else None
+    hard_cap = fields.get("hard_cap") if isinstance(fields.get("hard_cap"), int) else None
+    if warn_at is not None and _format_cents(warn_at).casefold() not in lowered:
+        return False
+    if hard_cap is not None and _format_cents(hard_cap).casefold() not in lowered:
+        return False
+    return True
+
+
 def _normalise_proposal_reply(result: dict) -> dict:
     if result.get("mode") != "proposal" or not isinstance(result.get("proposal"), dict):
         return result
     say = str(result.get("say") or "").strip()
     lowered = say.casefold()
+    preferred_intro = None
     if any(
         phrase in lowered for phrase in (
             "i have adjusted",
@@ -1157,6 +1232,9 @@ def _normalise_proposal_reply(result: dict) -> dict:
         )
     ):
         preferred_intro = "I revised the proposal" if "proposal" in lowered or "adjusted" in lowered else "I prepared a proposal"
+    elif not _proposal_reply_matches_payload(result["proposal"], say):
+        preferred_intro = "I revised the proposal" if any(word in lowered for word in ("revised", "adjusted", "proposal")) else "I prepared a proposal"
+    if preferred_intro is not None:
         result = dict(result)
         result["say"] = _proposal_review_say(result["proposal"], preferred_intro)
     return result
@@ -2119,6 +2197,9 @@ def send_message(
         )
         if exact_guardrail is not None:
             response_source, result = exact_guardrail
+    if isinstance(result, dict) and isinstance(result.get("proposal"), dict):
+        result = dict(result)
+        result["proposal"] = _hydrate_proposal(summary, result["proposal"])
     result = _normalise_proposal_reply(result)
     stored_proposal = None
     reused_existing_proposal = False
