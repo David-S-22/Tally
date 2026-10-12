@@ -1,3 +1,3 @@
 using 'main.bicep'
 
-param location = 'eastasia'
+param location = 'australiaeast'

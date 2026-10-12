@@ -9,6 +9,9 @@ metadata description = 'Tally — Azure Container Apps Infrastructure & Microser
 @description('Azure region for deployment')
 param location string = resourceGroup().location
 
+@description('Azure region for the Azure Container Registry')
+param acrLocation string = 'australiaeast'
+
 @description('Name of the Azure Container Registry (must be lowercase alphanumeric, 5-50 chars)')
 param acrName string = 'tallyasd21'
 
@@ -60,7 +63,7 @@ param enableRag bool = false
 
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: acrName
-  location: location
+  location: acrLocation
   sku: {
     name: 'Standard'
   }
