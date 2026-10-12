@@ -55,7 +55,7 @@ param enableMcp bool = false
 param enableRag bool = false
 
 // ==============================================================================
-// 1. Base Infrastructure: Container Registry, Log Analytics, Storage
+// 1. Base Infrastructure: Container Registry & Log Analytics
 // ==============================================================================
 
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
@@ -77,15 +77,6 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
       name: 'PerGB2018'
     }
   }
-}
-
-resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: storageAccountName
-  location: location
-  sku: {
-    name: 'Standard_LRS'
-  }
-  kind: 'StorageV2'
 }
 
 // ==============================================================================
