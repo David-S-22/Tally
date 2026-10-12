@@ -1,6 +1,6 @@
 // ==============================================================================
 // Module: SQLite Database Microservice
-// Reusable template for all SQLite container services with Azure Files persistent volume.
+// Reusable template for all SQLite container services (container-local storage).
 // ==============================================================================
 
 param name string
@@ -12,8 +12,6 @@ param acrAdminUsername string
 param acrAdminPassword string
 param imageTag string = 'latest'
 param targetPort int
-param mountPath string = '/app/data'
-param dbStorageName string = 'db-storage'
 param env array = []
 param cpu int = 2
 param memory string = '4Gi'
@@ -57,13 +55,6 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         minReplicas: minReplicas
         maxReplicas: maxReplicas
       }
-      volumes: [
-        {
-          name: 'db-vol'
-          storageType: 'AzureFile'
-          storageName: dbStorageName
-        }
-      ]
       containers: [
         {
           name: name
@@ -73,12 +64,6 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             memory: memory
           }
           env: env
-          volumeMounts: [
-            {
-              volumeName: 'db-vol'
-              mountPath: mountPath
-            }
-          ]
         }
       ]
     }

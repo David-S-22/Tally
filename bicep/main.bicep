@@ -18,9 +18,6 @@ param acrName string = 'tallyasd21'
 @description('Name of the Azure Container Apps Managed Environment')
 param environmentName string = 'cae-tally'
 
-@description('Name of the Storage Account (must be globally unique, 3-24 lowercase alphanumeric chars)')
-param storageAccountName string = 'tallyasd21'
-
 @description('Minimum number of replicas for container apps (0 enables scale-to-zero when idle)')
 param minReplicas int = 0
 
@@ -91,21 +88,8 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   kind: 'StorageV2'
 }
 
-resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2023-05-01' = {
-  parent: storage
-  name: 'default'
-}
-
-resource dbShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
-  parent: fileService
-  name: 'db-data'
-  properties: {
-    shareQuota: 10
-  }
-}
-
 // ==============================================================================
-// 2. Azure Container Apps Managed Environment & Persistent Storage Mounts
+// 2. Azure Container Apps Managed Environment
 // ==============================================================================
 
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
@@ -125,19 +109,6 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
         workloadProfileType: 'Consumption'
       }
     ]
-  }
-}
-
-resource dbStorage 'Microsoft.App/managedEnvironments/storages@2024-03-01' = {
-  parent: environment
-  name: 'db-storage'
-  properties: {
-    azureFile: {
-      accountName: storage.name
-      accountKey: storage.listKeys().keys[0].value
-      shareName: dbShare.name
-      accessMode: 'ReadWrite'
-    }
   }
 }
 
@@ -165,7 +136,7 @@ module modOllamaVm 'modules/ollama-vm.bicep' = if (deployOllamaVm) {
 // 4. Container Deployments using Reusable Modules
 // ==============================================================================
 
-// --- Databases (Reusable SQLite Module with Azure Files Mount) ---
+// --- Databases (Reusable SQLite Module) ---
 module modTransactionsDb 'modules/database.bicep' = {
   name: 'deploy-transactions-db'
   params: {
@@ -173,8 +144,6 @@ module modTransactionsDb 'modules/database.bicep' = {
     location: location
     environmentId: environment.id
     targetPort: 6001
-    mountPath: '/app/data'
-    dbStorageName: dbStorage.name
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
@@ -200,8 +169,6 @@ module modBillsDb 'modules/database.bicep' = {
     location: location
     environmentId: environment.id
     targetPort: 6005
-    mountPath: '/data'
-    dbStorageName: dbStorage.name
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
@@ -223,8 +190,6 @@ module modAnomaliesDb 'modules/database.bicep' = {
     location: location
     environmentId: environment.id
     targetPort: 6004
-    mountPath: '/app/data'
-    dbStorageName: dbStorage.name
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
@@ -254,8 +219,6 @@ module modBudgetsDb 'modules/database.bicep' = {
     location: location
     environmentId: environment.id
     targetPort: 6006
-    mountPath: '/app/data'
-    dbStorageName: dbStorage.name
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
@@ -278,8 +241,6 @@ module modSavingsDb 'modules/database.bicep' = {
     location: location
     environmentId: environment.id
     targetPort: 6002
-    mountPath: '/app/data'
-    dbStorageName: dbStorage.name
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
