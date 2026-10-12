@@ -107,6 +107,7 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
 var acrLoginServer = acr.properties.loginServer
 var acrAdminUsername = acr.listCredentials().username
 var acrAdminPassword = acr.listCredentials().passwords[0].value
+var envDomain = environment.properties.defaultDomain
 
 // ==============================================================================
 // 3. Dedicated Ollama Host VM (Conditional Provisioning)
@@ -146,9 +147,9 @@ module modTransactionsDb 'modules/database.bicep' = {
       { name: 'FLASK_ENV', value: 'production' }
       { name: 'PORT', value: '6001' }
       { name: 'DB_PATH', value: '/app/data/transactions.db' }
-      { name: 'ANOMALIES_DB_URL', value: 'http://anomalies-db/anomalies' }
+      { name: 'ANOMALIES_DB_URL', value: 'https://anomalies-db.${envDomain}/anomalies' }
       { name: 'ANOMALIES_TIMEOUT_SECONDS', value: '10' }
-      { name: 'SAVINGS_DB_URL', value: 'http://savings-db' }
+      { name: 'SAVINGS_DB_URL', value: 'https://savings-db.${envDomain}' }
     ]
   }
 }
@@ -192,7 +193,7 @@ module modAnomaliesDb 'modules/database.bicep' = {
       { name: 'FLASK_ENV', value: 'production' }
       { name: 'PORT', value: '6004' }
       { name: 'DB_PATH', value: '/app/data/anomalies.db' }
-      { name: 'TRANSACTIONS_DB_URL', value: 'http://transactions-db' }
+      { name: 'TRANSACTIONS_DB_URL', value: 'https://transactions-db.${envDomain}' }
       { name: 'TRANSACTIONS_TIMEOUT_SECONDS', value: '10' }
       { name: 'RECONCILE_MAX_RETRIES', value: '30' }
       { name: 'RECONCILE_RETRY_DELAY_SECONDS', value: '2' }
@@ -265,9 +266,9 @@ module modTransactionsBackend 'modules/backend.bicep' = {
     env: [
       { name: 'FLASK_ENV', value: 'production' }
       { name: 'PORT', value: '5001' }
-      { name: 'TRANSACTIONS_DB_URL', value: 'http://transactions-db' }
+      { name: 'TRANSACTIONS_DB_URL', value: 'https://transactions-db.${envDomain}' }
       { name: 'DATABASE_TIMEOUT_SECONDS', value: '20' }
-      { name: 'ANOMALIES_BACKEND_URL', value: 'http://anomalies-backend' }
+      { name: 'ANOMALIES_BACKEND_URL', value: 'https://anomalies-backend.${envDomain}' }
       { name: 'ANOMALIES_TIMEOUT_SECONDS', value: '10' }
       { name: 'OLLAMA_URL', value: ollamaUrl }
       { name: 'CHAT_MODEL', value: 'qwen2.5:3b' }
@@ -301,8 +302,8 @@ module modBillsBackend 'modules/backend.bicep' = {
     minReplicas: minReplicas
     env: [
       { name: 'PORT', value: '5005' }
-      { name: 'BILLS_DB_API_URL', value: 'http://bills-db' }
-      { name: 'FRONTEND_ORIGIN', value: 'http://shared-frontend' }
+      { name: 'BILLS_DB_API_URL', value: 'https://bills-db.${envDomain}' }
+      { name: 'FRONTEND_ORIGIN', value: 'https://shared-frontend.${envDomain}' }
       { name: 'OLLAMA_URL', value: ollamaUrl }
       { name: 'OLLAMA_KEEP_ALIVE', value: '30m' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
@@ -332,8 +333,8 @@ module modAnomaliesBackend 'modules/backend.bicep' = {
     env: [
       { name: 'FLASK_ENV', value: 'production' }
       { name: 'PORT', value: '5004' }
-      { name: 'ANOMALIES_DB_URL', value: 'http://anomalies-db/anomalies' }
-      { name: 'TRANSACTIONS_DB_URL', value: 'http://transactions-db' }
+      { name: 'ANOMALIES_DB_URL', value: 'https://anomalies-db.${envDomain}/anomalies' }
+      { name: 'TRANSACTIONS_DB_URL', value: 'https://transactions-db.${envDomain}' }
       { name: 'OLLAMA_URL', value: '${ollamaUrl}/v1' }
       { name: 'OLLAMA_MODEL', value: 'llama3.1:8b' }
       { name: 'OLLAMA_LOG_LEVEL', value: 'DEBUG' }
@@ -368,8 +369,8 @@ module modBudgetsBackend 'modules/backend.bicep' = {
     env: [
       { name: 'FLASK_ENV', value: 'production' }
       { name: 'PORT', value: '5006' }
-      { name: 'BUDGETS_DB_URL', value: 'http://budgets-db' }
-      { name: 'TRANSACTIONS_API_URL', value: 'http://transactions-backend' }
+      { name: 'BUDGETS_DB_URL', value: 'https://budgets-db.${envDomain}' }
+      { name: 'TRANSACTIONS_API_URL', value: 'https://transactions-backend.${envDomain}' }
       { name: 'OLLAMA_URL', value: ollamaUrl }
       { name: 'CHAT_MODEL', value: 'qwen2.5:3b' }
       { name: 'AI_TIMEOUT_SECONDS', value: '90' }
@@ -404,8 +405,8 @@ module modSavingsBackend 'modules/backend.bicep' = {
     env: [
       { name: 'FLASK_ENV', value: 'production' }
       { name: 'PORT', value: '5002' }
-      { name: 'DB_URL', value: 'http://savings-db' }
-      { name: 'TRANSACTIONS_DB_URL', value: 'http://transactions-db' }
+      { name: 'DB_URL', value: 'https://savings-db.${envDomain}' }
+      { name: 'TRANSACTIONS_DB_URL', value: 'https://transactions-db.${envDomain}' }
       { name: 'OLLAMA_URL', value: '${ollamaUrl}/v1' }
       { name: 'OLLAMA_MODEL', value: 'llama3.1:8b' }
       { name: 'OLLAMA_CLASSIFIER_MODEL', value: 'qwen2.5:3b' }
@@ -438,7 +439,7 @@ module modTransactionsFrontend 'modules/frontend.bicep' = {
     minReplicas: minReplicas
     env: [
       { name: 'PORT', value: '3001' }
-      { name: 'TRANSACTIONS_BACKEND_URL', value: 'http://transactions-backend' }
+      { name: 'TRANSACTIONS_BACKEND_URL', value: 'https://transactions-backend.${envDomain}' }
     ]
   }
   dependsOn: [
@@ -461,6 +462,9 @@ module modBillsFrontend 'modules/frontend.bicep' = {
     cpu: defaultCpu
     memory: defaultMemory
     minReplicas: minReplicas
+    env: [
+      { name: 'BILLS_BACKEND_URL', value: 'https://bills-backend.${envDomain}' }
+    ]
   }
   dependsOn: [
     modBillsBackend
@@ -484,7 +488,7 @@ module modAnomaliesFrontend 'modules/frontend.bicep' = {
     minReplicas: minReplicas
     env: [
       { name: 'PORT', value: '3004' }
-      { name: 'ANOMALIES_BACKEND_URL', value: 'http://anomalies-backend' }
+      { name: 'ANOMALIES_BACKEND_URL', value: 'https://anomalies-backend.${envDomain}' }
     ]
   }
   dependsOn: [
@@ -509,7 +513,7 @@ module modBudgetsFrontend 'modules/frontend.bicep' = {
     minReplicas: minReplicas
     env: [
       { name: 'PORT', value: '3006' }
-      { name: 'BUDGETS_BACKEND_URL', value: 'http://budgets-backend' }
+      { name: 'BUDGETS_BACKEND_URL', value: 'https://budgets-backend.${envDomain}' }
     ]
   }
   dependsOn: [
@@ -534,7 +538,7 @@ module modSavingsFrontend 'modules/frontend.bicep' = {
     minReplicas: minReplicas
     env: [
       { name: 'PORT', value: '3002' }
-      { name: 'BACKEND_URL', value: 'http://savings-backend' }
+      { name: 'BACKEND_URL', value: 'https://savings-backend.${envDomain}' }
     ]
   }
   dependsOn: [
@@ -560,11 +564,11 @@ module modSharedFrontend 'modules/frontend.bicep' = {
     minReplicas: minReplicas
     env: [
       { name: 'PORT', value: '3000' }
-      { name: 'TRANSACTIONS_FRONTEND_URL', value: 'http://transactions-frontend' }
-      { name: 'ANOMALIES_FRONTEND_URL', value: 'http://anomalies-frontend' }
-      { name: 'SAVINGS_FRONTEND_URL', value: 'http://savings-frontend' }
-      { name: 'BILLS_FRONTEND_URL', value: 'http://bills-frontend' }
-      { name: 'BUDGETS_FRONTEND_URL', value: 'http://budgets-frontend' }
+      { name: 'TRANSACTIONS_FRONTEND_URL', value: 'https://transactions-frontend.${envDomain}' }
+      { name: 'ANOMALIES_FRONTEND_URL', value: 'https://anomalies-frontend.${envDomain}' }
+      { name: 'SAVINGS_FRONTEND_URL', value: 'https://savings-frontend.${envDomain}' }
+      { name: 'BILLS_FRONTEND_URL', value: 'https://bills-frontend.${envDomain}' }
+      { name: 'BUDGETS_FRONTEND_URL', value: 'https://budgets-frontend.${envDomain}' }
     ]
   }
   dependsOn: [
