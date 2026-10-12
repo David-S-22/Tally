@@ -132,8 +132,8 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
       {
         name: 'ollama-profile'
         workloadProfileType: ollamaWorkloadProfileType
-        minimumCount: 1
-        maximumCount: 2
+        minimumCount: 0
+        maximumCount: 1
       }
     ]
   }
