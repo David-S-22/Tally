@@ -59,7 +59,7 @@ param enableRag bool = false
 // ==============================================================================
 
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
-  name: toLower(acrName)
+  name: acrName
   location: location
   sku: {
     name: 'Standard'
