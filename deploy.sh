@@ -56,6 +56,49 @@ show_health() {
     fi
 }
 
+SERVICES=(
+    "transactions-db:janelle/database/Dockerfile:."
+    "transactions-backend:janelle/backend/Dockerfile:."
+    "transactions-frontend:janelle/frontend/Dockerfile:janelle/frontend"
+    "bills-db:sophia/database/Dockerfile:sophia/database"
+    "bills-backend:sophia/backend/Dockerfile:sophia/backend"
+    "bills-frontend:sophia/frontend/Dockerfile:sophia/frontend"
+    "anomalies-db:aiden/database/Dockerfile:."
+    "anomalies-backend:aiden/backend/Dockerfile:."
+    "anomalies-frontend:aiden/frontend/Dockerfile:aiden/frontend"
+    "budgets-db:ethan/database/Dockerfile:ethan/database"
+    "budgets-backend:ethan/backend/Dockerfile:ethan/backend"
+    "budgets-frontend:ethan/frontend/Dockerfile:ethan/frontend"
+    "savings-db:david/database/Dockerfile:."
+    "savings-backend:david/backend/Dockerfile:."
+    "savings-frontend:david/frontend/Dockerfile:david/frontend"
+    "shared-frontend:shared/frontend/Dockerfile:shared/frontend"
+)
+
+get_image_tag() {
+    local tag
+    tag=$(git rev-parse --short HEAD 2>/dev/null || date +%s)
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+        tag="${tag}-$(date +%s)"
+    fi
+    echo "$tag"
+}
+
+build_and_push_containers() {
+    local tag="$1"
+    echo "==> Logging in to Azure Container Registry..."
+    az acr login --name "$ACR_NAME"
+
+    echo "==> Building and pushing microservice containers (tag: $tag)..."
+    for item in "${SERVICES[@]}"; do
+        IFS=':' read -r name dockerfile ctx <<< "$item"
+        echo "--> Building $name ($tag)..."
+        docker build --platform linux/amd64 -t "$LOGIN_SERVER/$name:$tag" -f "$dockerfile" "$ctx"
+        echo "--> Pushing $name..."
+        docker push "$LOGIN_SERVER/$name:$tag"
+    done
+}
+
 TARGET="${1:-all}"
 
 case "$TARGET" in
@@ -63,24 +106,33 @@ case "$TARGET" in
         show_health
         exit 0
         ;;
+    --update|update)
+        FAST_UPDATE=true
+        DEPLOY_CONTAINERS=false
+        DEPLOY_VM=false
+        ;;
     --containers|containers)
+        FAST_UPDATE=false
         DEPLOY_CONTAINERS=true
         DEPLOY_VM=false
         ;;
     --vm|vm)
+        FAST_UPDATE=false
         DEPLOY_CONTAINERS=false
         DEPLOY_VM=true
         ;;
     --all|all|"")
+        FAST_UPDATE=false
         DEPLOY_CONTAINERS=true
         DEPLOY_VM=true
         ;;
     *)
-        echo "Usage: ./deploy.sh [all | containers | vm | health]"
+        echo "Usage: ./deploy.sh [all | containers | update | vm | health]"
         echo ""
         echo "Options:"
         echo "  all         Deploy Ollama VM, verify health, then deploy containers (default)"
-        echo "  containers  Deploy microservice containers only (skip VM)"
+        echo "  containers  Deploy microservice containers via Bicep (skip VM)"
+        echo "  update      Fast update: rebuild, push, and update all containers via CLI (skips Bicep)"
         echo "  vm          Deploy Ollama VM only and wait for health check"
         echo "  health      Check current health and models of the Ollama VM"
         exit 1
@@ -116,50 +168,37 @@ if [ "$DEPLOY_VM" = true ]; then
     wait_for_ollama_ready 300 || true
 fi
 
-# --- Step 2: Build & Push Containers if requested ---
-if [ "$DEPLOY_CONTAINERS" = true ]; then
-    echo "==> 2. Logging in to Azure Container Registry..."
-    az acr login --name "$ACR_NAME"
-
-    IMAGE_TAG=$(git rev-parse --short HEAD 2>/dev/null || date +%s)
-    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-        IMAGE_TAG="${IMAGE_TAG}-$(date +%s)"
-    fi
+# --- Fast Update: Directly update Container Apps without running Bicep ---
+if [ "$FAST_UPDATE" = true ]; then
+    IMAGE_TAG=$(get_image_tag)
     echo "==> Using image tag: $IMAGE_TAG"
 
-    echo "==> 3. Building and pushing microservice containers..."
-    SERVICES=(
-        "transactions-db:janelle/database/Dockerfile:."
-        "transactions-backend:janelle/backend/Dockerfile:."
-        "transactions-frontend:janelle/frontend/Dockerfile:janelle/frontend"
-        "bills-db:sophia/database/Dockerfile:sophia/database"
-        "bills-backend:sophia/backend/Dockerfile:sophia/backend"
-        "bills-frontend:sophia/frontend/Dockerfile:sophia/frontend"
-        "anomalies-db:aiden/database/Dockerfile:."
-        "anomalies-backend:aiden/backend/Dockerfile:."
-        "anomalies-frontend:aiden/frontend/Dockerfile:aiden/frontend"
-        "budgets-db:ethan/database/Dockerfile:ethan/database"
-        "budgets-backend:ethan/backend/Dockerfile:ethan/backend"
-        "budgets-frontend:ethan/frontend/Dockerfile:ethan/frontend"
-        "savings-db:david/database/Dockerfile:."
-        "savings-backend:david/backend/Dockerfile:."
-        "savings-frontend:david/frontend/Dockerfile:david/frontend"
-        "shared-frontend:shared/frontend/Dockerfile:shared/frontend"
-    )
+    build_and_push_containers "$IMAGE_TAG"
 
+    echo "==> Updating Container Apps in Azure via CLI..."
     for item in "${SERVICES[@]}"; do
-        IFS=':' read -r name dockerfile ctx <<< "$item"
-        echo "--> Building $name ($IMAGE_TAG & latest)..."
-        docker build --platform linux/amd64 \
-            -t "$LOGIN_SERVER/$name:$IMAGE_TAG" \
-            -t "$LOGIN_SERVER/$name:latest" \
-            -f "$dockerfile" "$ctx"
-        echo "--> Pushing $name ($IMAGE_TAG & latest)..."
-        docker push "$LOGIN_SERVER/$name:$IMAGE_TAG"
+        IFS=':' read -r name _ _ <<< "$item"
+        echo "--> Updating $name..."
+        az containerapp update \
+            --name "$name" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$LOGIN_SERVER/$name:$IMAGE_TAG" \
+            --output none
     done
 
+    echo "==> Fast update completed successfully!"
+    exit 0
+fi
+
+# --- Step 2: Build, Push & Deploy Containers via Bicep ---
+if [ "$DEPLOY_CONTAINERS" = true ]; then
+    IMAGE_TAG=$(get_image_tag)
+    echo "==> Using image tag: $IMAGE_TAG"
+
+    build_and_push_containers "$IMAGE_TAG"
+
     # --- Step 3: Deploy Container Apps ---
-    echo "==> 4. Deploying Container Apps to Azure (imageTag: $IMAGE_TAG)..."
+    echo "==> Deploying Container Apps to Azure (imageTag: $IMAGE_TAG)..."
     az deployment group create \
         --resource-group "$RESOURCE_GROUP" \
         --template-file bicep/main.bicep \
