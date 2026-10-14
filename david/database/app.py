@@ -7,9 +7,12 @@ from .seed import seed_database_if_empty
 from flask import Flask
 import os
 import datetime
+from pathlib import Path
 
 def setup_app(database_path) -> Flask:
     app = Flask(__name__)
+    if database_path and database_path != ":memory:":
+        Path(database_path).parent.mkdir(parents=True, exist_ok=True)
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{database_path}"
     db.init_app(app)
     with app.app_context():

@@ -8,6 +8,8 @@ COPY ./david/database/requirements.txt ./requirements.txt
 
 RUN pip install --no-cache-dir -r ./requirements.txt
 
+RUN mkdir -p /app/data
+
 EXPOSE 6002
 
 CMD ["python", "-m", "database.app"]
