@@ -39,11 +39,17 @@ param ollamaUrl string = 'http://${ollamaDnsLabel}.${location}.cloudapp.azure.co
 @description('Daily auto-shutdown time in 24-hour format (0000 = 12:00 AM midnight AEST)')
 param autoShutdownTime string = '0000'
 
-@description('vCPU allocated to each standard microservice container')
-param defaultCpu int = 2
+@description('vCPU allocated to lightweight microservice containers (databases, frontends)')
+param defaultCpu string = '0.25'
 
-@description('Memory allocated to each standard microservice container')
-param defaultMemory string = '4Gi'
+@description('Memory allocated to lightweight microservice containers (databases, frontends)')
+param defaultMemory string = '0.5Gi'
+
+@description('vCPU allocated to backend API microservice containers')
+param backendCpu string = '0.5'
+
+@description('Memory allocated to backend API microservice containers')
+param backendMemory string = '1.0Gi'
 
 @description('Image tag to deploy for application containers')
 param imageTag string = 'latest'
@@ -129,7 +135,7 @@ module modOllamaVm 'modules/ollama-vm.bicep' = if (deployOllamaVm) {
 // ==============================================================================
 
 // --- Databases (Reusable SQLite Module) ---
-module modTransactionsDb 'modules/database.bicep' = {
+module modTransactionsDb 'modules/container-app.bicep' = {
   name: 'deploy-transactions-db'
   params: {
     name: 'transactions-db'
@@ -154,7 +160,7 @@ module modTransactionsDb 'modules/database.bicep' = {
   }
 }
 
-module modBillsDb 'modules/database.bicep' = {
+module modBillsDb 'modules/container-app.bicep' = {
   name: 'deploy-bills-db'
   params: {
     name: 'bills-db'
@@ -175,7 +181,7 @@ module modBillsDb 'modules/database.bicep' = {
   }
 }
 
-module modAnomaliesDb 'modules/database.bicep' = {
+module modAnomaliesDb 'modules/container-app.bicep' = {
   name: 'deploy-anomalies-db'
   params: {
     name: 'anomalies-db'
@@ -204,7 +210,7 @@ module modAnomaliesDb 'modules/database.bicep' = {
   ]
 }
 
-module modBudgetsDb 'modules/database.bicep' = {
+module modBudgetsDb 'modules/container-app.bicep' = {
   name: 'deploy-budgets-db'
   params: {
     name: 'budgets-db'
@@ -226,7 +232,7 @@ module modBudgetsDb 'modules/database.bicep' = {
   }
 }
 
-module modSavingsDb 'modules/database.bicep' = {
+module modSavingsDb 'modules/container-app.bicep' = {
   name: 'deploy-savings-db'
   params: {
     name: 'savings-db'
@@ -249,7 +255,7 @@ module modSavingsDb 'modules/database.bicep' = {
 }
 
 // --- Backends (Reusable Backend API Module) ---
-module modTransactionsBackend 'modules/backend.bicep' = {
+module modTransactionsBackend 'modules/container-app.bicep' = {
   name: 'deploy-transactions-backend'
   params: {
     name: 'transactions-backend'
@@ -260,8 +266,8 @@ module modTransactionsBackend 'modules/backend.bicep' = {
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
-    cpu: defaultCpu
-    memory: defaultMemory
+    cpu: backendCpu
+    memory: backendMemory
     minReplicas: minReplicas
     env: [
       { name: 'FLASK_ENV', value: 'production' }
@@ -286,7 +292,7 @@ module modTransactionsBackend 'modules/backend.bicep' = {
   ]
 }
 
-module modBillsBackend 'modules/backend.bicep' = {
+module modBillsBackend 'modules/container-app.bicep' = {
   name: 'deploy-bills-backend'
   params: {
     name: 'bills-backend'
@@ -297,8 +303,8 @@ module modBillsBackend 'modules/backend.bicep' = {
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
-    cpu: defaultCpu
-    memory: defaultMemory
+    cpu: backendCpu
+    memory: backendMemory
     minReplicas: minReplicas
     env: [
       { name: 'PORT', value: '5005' }
@@ -316,7 +322,7 @@ module modBillsBackend 'modules/backend.bicep' = {
   ]
 }
 
-module modAnomaliesBackend 'modules/backend.bicep' = {
+module modAnomaliesBackend 'modules/container-app.bicep' = {
   name: 'deploy-anomalies-backend'
   params: {
     name: 'anomalies-backend'
@@ -327,8 +333,8 @@ module modAnomaliesBackend 'modules/backend.bicep' = {
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
-    cpu: defaultCpu
-    memory: defaultMemory
+    cpu: backendCpu
+    memory: backendMemory
     minReplicas: minReplicas
     env: [
       { name: 'FLASK_ENV', value: 'production' }
@@ -352,7 +358,7 @@ module modAnomaliesBackend 'modules/backend.bicep' = {
   ]
 }
 
-module modBudgetsBackend 'modules/backend.bicep' = {
+module modBudgetsBackend 'modules/container-app.bicep' = {
   name: 'deploy-budgets-backend'
   params: {
     name: 'budgets-backend'
@@ -363,8 +369,8 @@ module modBudgetsBackend 'modules/backend.bicep' = {
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
-    cpu: defaultCpu
-    memory: defaultMemory
+    cpu: backendCpu
+    memory: backendMemory
     minReplicas: minReplicas
     env: [
       { name: 'FLASK_ENV', value: 'production' }
@@ -388,7 +394,7 @@ module modBudgetsBackend 'modules/backend.bicep' = {
   ]
 }
 
-module modSavingsBackend 'modules/backend.bicep' = {
+module modSavingsBackend 'modules/container-app.bicep' = {
   name: 'deploy-savings-backend'
   params: {
     name: 'savings-backend'
@@ -399,8 +405,8 @@ module modSavingsBackend 'modules/backend.bicep' = {
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
     imageTag: imageTag
-    cpu: defaultCpu
-    memory: defaultMemory
+    cpu: backendCpu
+    memory: backendMemory
     minReplicas: minReplicas
     env: [
       { name: 'FLASK_ENV', value: 'production' }
@@ -422,7 +428,7 @@ module modSavingsBackend 'modules/backend.bicep' = {
 }
 
 // --- Frontends (Reusable Frontend Module) ---
-module modTransactionsFrontend 'modules/frontend.bicep' = {
+module modTransactionsFrontend 'modules/container-app.bicep' = {
   name: 'deploy-transactions-frontend'
   params: {
     name: 'transactions-frontend'
@@ -447,7 +453,7 @@ module modTransactionsFrontend 'modules/frontend.bicep' = {
   ]
 }
 
-module modBillsFrontend 'modules/frontend.bicep' = {
+module modBillsFrontend 'modules/container-app.bicep' = {
   name: 'deploy-bills-frontend'
   params: {
     name: 'bills-frontend'
@@ -471,7 +477,7 @@ module modBillsFrontend 'modules/frontend.bicep' = {
   ]
 }
 
-module modAnomaliesFrontend 'modules/frontend.bicep' = {
+module modAnomaliesFrontend 'modules/container-app.bicep' = {
   name: 'deploy-anomalies-frontend'
   params: {
     name: 'anomalies-frontend'
@@ -496,7 +502,7 @@ module modAnomaliesFrontend 'modules/frontend.bicep' = {
   ]
 }
 
-module modBudgetsFrontend 'modules/frontend.bicep' = {
+module modBudgetsFrontend 'modules/container-app.bicep' = {
   name: 'deploy-budgets-frontend'
   params: {
     name: 'budgets-frontend'
@@ -521,7 +527,7 @@ module modBudgetsFrontend 'modules/frontend.bicep' = {
   ]
 }
 
-module modSavingsFrontend 'modules/frontend.bicep' = {
+module modSavingsFrontend 'modules/container-app.bicep' = {
   name: 'deploy-savings-frontend'
   params: {
     name: 'savings-frontend'
@@ -547,7 +553,7 @@ module modSavingsFrontend 'modules/frontend.bicep' = {
 }
 
 // --- Shared Gateway Frontend (External Ingress = true) ---
-module modSharedFrontend 'modules/frontend.bicep' = {
+module modSharedFrontend 'modules/container-app.bicep' = {
   name: 'deploy-shared-frontend'
   params: {
     name: 'shared-frontend'
