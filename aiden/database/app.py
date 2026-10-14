@@ -1,4 +1,5 @@
 from flask import Blueprint, Flask, abort, json, jsonify, request
+from pathlib import Path
 from sqlalchemy import select, inspect, text
 from werkzeug.exceptions import HTTPException
 
@@ -109,6 +110,9 @@ app.register_blueprint(anomalies, url_prefix="/anomalies")
 def setup_database(db_path: str):
     if "sqlalchemy" in app.extensions:
         return
+
+    if db_path and db_path != ":memory:":
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
     with app.app_context():
         app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + db_path
