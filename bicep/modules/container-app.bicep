@@ -60,8 +60,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: name
           image: '${acrLoginServer}/${name}:${imageTag}'
           resources: {
-            #disable-next-line BCP036
-            cpu: cpu
+            cpu: any(cpu)
             memory: memory
           }
           env: env
