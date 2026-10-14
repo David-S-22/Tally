@@ -121,6 +121,12 @@ if [ "$DEPLOY_CONTAINERS" = true ]; then
     echo "==> 2. Logging in to Azure Container Registry..."
     az acr login --name "$ACR_NAME"
 
+    IMAGE_TAG=$(git rev-parse --short HEAD 2>/dev/null || date +%s)
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+        IMAGE_TAG="${IMAGE_TAG}-$(date +%s)"
+    fi
+    echo "==> Using image tag: $IMAGE_TAG"
+
     echo "==> 3. Building and pushing microservice containers..."
     SERVICES=(
         "transactions-db:janelle/database/Dockerfile:."
@@ -143,19 +149,23 @@ if [ "$DEPLOY_CONTAINERS" = true ]; then
 
     for item in "${SERVICES[@]}"; do
         IFS=':' read -r name dockerfile ctx <<< "$item"
-        echo "--> Building $name..."
-        docker build --platform linux/amd64 -t "$LOGIN_SERVER/$name:latest" -f "$dockerfile" "$ctx"
-        echo "--> Pushing $name..."
-        docker push "$LOGIN_SERVER/$name:latest"
+        echo "--> Building $name ($IMAGE_TAG & latest)..."
+        docker build --platform linux/amd64 \
+            -t "$LOGIN_SERVER/$name:$IMAGE_TAG" \
+            -t "$LOGIN_SERVER/$name:latest" \
+            -f "$dockerfile" "$ctx"
+        echo "--> Pushing $name ($IMAGE_TAG & latest)..."
+        docker push "$LOGIN_SERVER/$name:$IMAGE_TAG"
     done
 
     # --- Step 3: Deploy Container Apps ---
-    echo "==> 4. Deploying Container Apps to Azure..."
+    echo "==> 4. Deploying Container Apps to Azure (imageTag: $IMAGE_TAG)..."
     az deployment group create \
         --resource-group "$RESOURCE_GROUP" \
         --template-file bicep/main.bicep \
         --parameters bicep/main.bicepparam \
         --parameters deployOllamaVm=false \
+        --parameters imageTag="$IMAGE_TAG" \
         --rollback-on-error
 fi
 
