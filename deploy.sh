@@ -86,6 +86,19 @@ get_image_tag() {
 
 build_and_push_containers() {
     local tag="$1"
+
+    # Ensure ACR exists before logging in (enables bootstrapping on fresh resource groups)
+    if ! az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+        echo "==> ACR '$ACR_NAME' not found in '$RESOURCE_GROUP'. Creating registry..."
+        az acr create \
+            --name "$ACR_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --location "australiaeast" \
+            --sku Standard \
+            --admin-enabled true \
+            --output none
+    fi
+
     echo "==> Logging in to Azure Container Registry..."
     az acr login --name "$ACR_NAME"
 
