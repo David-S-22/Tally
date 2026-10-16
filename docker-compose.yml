@@ -299,3 +299,4 @@ volumes:
   anomalies_data:
   budgets_data:
   savings_data:
+
