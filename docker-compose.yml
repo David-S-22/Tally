@@ -48,7 +48,6 @@ services:
       - "3001:3001"
     environment:
       PORT: 3001
-      TRANSACTIONS_BACKEND_URL: http://transactions-backend:5001
     depends_on:
       - transactions-backend
   transactions-backend:
@@ -102,8 +101,6 @@ services:
     container_name: bills-frontend
     ports:
       - "3005:80"
-    environment:
-      BILLS_BACKEND_URL: http://bills-backend:5005
     depends_on:
       - bills-backend
   bills-backend:
@@ -214,10 +211,10 @@ services:
       OLLAMA_URL: http://ollama:11434
       CHAT_MODEL: qwen2.5:3b
       AI_TIMEOUT_SECONDS: 90
-      MCP_ENABLED: ${MCP_ENABLED:-true}
+      MCP_ENABLED: "true"
       MCP_SERVER_URL: http://host.docker.internal:8000/mcp
       MCP_TIMEOUT_SECONDS: 15
-      RAG_ENABLED: ${RAG_ENABLED:-true}
+      RAG_ENABLED: "true"
       RAG_SERVER_URL: http://host.docker.internal:5003
       RAG_FEATURE: budgets
       RAG_TOP_K: 3
@@ -299,4 +296,3 @@ volumes:
   anomalies_data:
   budgets_data:
   savings_data:
-
