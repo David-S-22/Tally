@@ -17,6 +17,7 @@ jobs:
   deploy:
     name: Build and deploy containers to Azure
     runs-on: ubuntu-latest
+    environment: production
 
     steps:
       - name: Checkout
