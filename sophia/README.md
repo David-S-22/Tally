@@ -186,6 +186,14 @@ Codes: 503 `mcp_disabled`, `rag_disabled`, `mcp_connection`, `mcp_timeout`, `rag
 Routes: `GET /api/tools`, `POST /api/tools/<name>`, `POST /api/evidence`; fragments `GET /ui/tools`, `POST /ui/tools/search_transactions`, `GET /ui/evidence`, `POST /ui/evidence`.
 Start order for a live run: `docker compose up -d`, then `python ai-services/rag-server/server.py`, then `python ai-services/mcp-server/server.py`. Sophia-CI runs with both switches `"false"` and asserts the refusal; it has no `rag` job and its path filter is `ai-services/rag-server/sources/billing/**`; `python sophia/rag/mcp_ragtest.py` is the terminal check of both tools.
 
+## Multi-Agent Server (Bills, Release 2)
+
+bills-backend reaches the shared Multi-Agent Server through `clients/multi_agent.py` (plain `requests`; `MULTI_AGENT_SERVER_URL`, default `http://host.docker.internal:5010`), speaking the contract in `docs/release-2/shared/adr-multi-agent-server-contract.md`. One workflow: the dispute letter. `services/multi_agent.py` gathers the dispute's evidence with the same `bank_evidence` / `policy_evidence` helpers the single-model letter uses, sends it as `{source, summary, data}` items with the task "Draft a dispute letter for bill N (merchant, reason)", and returns the server's record: plan, drafted letter, reviewer verdict and risks, `human_decision.status == "pending"`. Nothing is written until the human decides: Accept stores the worker's letter, Partially Accept stores the user's edited letter, Reject stores nothing. A stored letter becomes the next dispute draft with `enforce_payment_method_step` applied and `steps_json` carrying the evidence, the review and the `workflow_id`.
+Switches and knobs: `MULTI_AGENT_ENABLED` (code default off; compose `${…:-true}`; CI and cloud `"false"`), `MULTI_AGENT_TIMEOUT_SECONDS` (90; the server blocks until the reviewer finishes).
+Codes: 503 `multi_agent_disabled`, `multi_agent_connection`, `multi_agent_timeout`; 502 `multi_agent_error`, `multi_agent_invalid_result`; 409 `multi_agent_rejected` (a second decision, or a request the server refused); 404 for an unknown workflow.
+Routes: `POST /api/disputes/<id>/workflow` (201, the pending record), `POST /api/disputes/<id>/workflow/<workflow_id>/decision` with `{decision, corrected_output?, reason?}` (200, the record plus `draft` when a letter was stored). `/health` reports `modes.multi_agent`.
+Start order for a live run adds `python ai-services/multi-agent-server/server.py` (the stub until the real agents land). `sophia/test/test_multi_agent_routes.py` drives the real stub coordinator behind the client, so both sides of the contract are tested together.
+
 ## Inbound contracts
 
 See `docs/release-0/sophia/contracts-inbound.md` (first written 22 Aug 2026,

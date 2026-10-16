@@ -60,6 +60,9 @@ param enableMcp bool = false
 @description('Enable Retrieval-Augmented Generation (RAG) integrations in backend services')
 param enableRag bool = false
 
+@description('Release 2: enable the shared Multi-Agent Server in backends that support it (Bills). Off in the required cloud build; bonus B4 turns it on')
+param enableMultiAgent bool = false
+
 // ==============================================================================
 // 1. Base Infrastructure: Container Registry & Log Analytics
 // ==============================================================================
@@ -315,6 +318,8 @@ module modBillsBackend 'modules/container-app.bicep' = {
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
       { name: 'MCP_SERVER_URL', value: 'http://host.docker.internal:8000/mcp' }
       { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
+      { name: 'MULTI_AGENT_ENABLED', value: enableMultiAgent ? 'true' : 'false' }
+      { name: 'MULTI_AGENT_SERVER_URL', value: 'http://host.docker.internal:5010' }
     ]
   }
   dependsOn: [

@@ -9,6 +9,12 @@ MODE_MESSAGES = {
     "mcp_invalid_result": "The MCP tool returned an invalid result.",
     "tool_not_allowed": "The MCP tool is not allowed.",
     "rag_unavailable": "The RAG server is unavailable.",
+    "multi_agent_disabled": "Multi-Agent mode is disabled.",
+    "multi_agent_connection": "The Multi-Agent server is unavailable.",
+    "multi_agent_timeout": "The Multi-Agent server did not respond in time.",
+    "multi_agent_error": "The Multi-Agent server reported an error.",
+    "multi_agent_invalid_result": "The Multi-Agent server returned an invalid result.",
+    "multi_agent_rejected": "The Multi-Agent server rejected the request.",
 }
 
 MODE_STATUSES = {
@@ -20,6 +26,12 @@ MODE_STATUSES = {
     "mcp_invalid_result": 502,
     "tool_not_allowed": 400,
     "rag_unavailable": 503,
+    "multi_agent_disabled": 503,
+    "multi_agent_connection": 503,
+    "multi_agent_timeout": 503,
+    "multi_agent_error": 502,
+    "multi_agent_invalid_result": 502,
+    "multi_agent_rejected": 409,
 }
 
 
@@ -39,7 +51,7 @@ class NotFound(ServiceError):
 
 
 class ModeError(ServiceError):
-    """An MCP/RAG refusal or failure with a safe code; the message never carries upstream text."""
+    """An MCP/RAG/Multi-Agent refusal or failure with a safe code; the message never carries upstream text."""
 
     def __init__(self, code):
         super().__init__(MODE_MESSAGES[code], status=MODE_STATUSES[code], code=code)

@@ -52,3 +52,8 @@ RAG_ENABLED = _flag("RAG_ENABLED", False)
 RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "3"))
 RAG_HIGH, RAG_MEDIUM, RAG_LOW = _rag_thresholds(os.environ)
 GROUNDED_TIMEOUT_SECONDS = float(os.environ.get("GROUNDED_TIMEOUT_SECONDS", "20"))
+
+# Release 2: the shared Multi-Agent Server (Planner -> Worker -> Reviewer -> Human Review); off unless switched on.
+MULTI_AGENT_ENABLED = _flag("MULTI_AGENT_ENABLED", False)
+MULTI_AGENT_SERVER_URL = os.environ.get("MULTI_AGENT_SERVER_URL", "http://host.docker.internal:5010").rstrip("/")
+MULTI_AGENT_TIMEOUT_SECONDS = float(os.environ.get("MULTI_AGENT_TIMEOUT_SECONDS", "90"))
