@@ -102,13 +102,30 @@ build_and_push_containers() {
     echo "==> Logging in to Azure Container Registry..."
     az acr login --name "$ACR_NAME"
 
-    echo "==> Building and pushing microservice containers (tag: $tag)..."
+    local use_buildx=false
+    if docker buildx version &>/dev/null; then
+        use_buildx=true
+    fi
+
+    echo "==> Building and pushing microservice containers (tag: $tag, buildx cache: $use_buildx)..."
     for item in "${SERVICES[@]}"; do
         IFS=':' read -r name dockerfile ctx <<< "$item"
         echo "--> Building $name ($tag)..."
-        docker build --platform linux/amd64 -t "$LOGIN_SERVER/$name:$tag" -f "$dockerfile" "$ctx"
-        echo "--> Pushing $name..."
-        docker push "$LOGIN_SERVER/$name:$tag"
+        if [ "$use_buildx" = true ]; then
+            docker buildx build \
+                --platform linux/amd64 \
+                --cache-from "type=registry,ref=$LOGIN_SERVER/$name:latest" \
+                --cache-to "type=inline" \
+                -t "$LOGIN_SERVER/$name:$tag" \
+                -t "$LOGIN_SERVER/$name:latest" \
+                -f "$dockerfile" "$ctx" \
+                --push
+        else
+            docker build --platform linux/amd64 -t "$LOGIN_SERVER/$name:$tag" -t "$LOGIN_SERVER/$name:latest" -f "$dockerfile" "$ctx"
+            echo "--> Pushing $name..."
+            docker push "$LOGIN_SERVER/$name:$tag"
+            docker push "$LOGIN_SERVER/$name:latest"
+        fi
     done
 }
 

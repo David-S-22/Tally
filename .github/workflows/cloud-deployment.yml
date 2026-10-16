@@ -16,6 +16,17 @@ on:
       - ".github/workflows/cloud-deployment.yml"
       - ".dockerignore"
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Deployment target (auto, update, containers, all)'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - update
+          - containers
+          - all
 
 concurrency:
   group: production-deployment
@@ -27,13 +38,18 @@ permissions:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     name: Build and deploy containers to Azure
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Azure Login
         uses: azure/login@v3
@@ -45,4 +61,19 @@ jobs:
       - name: Deploy containers
         run: |
           chmod +x ./deploy.sh
-          ./deploy.sh containers
+
+          TARGET="${{ inputs.target || 'auto' }}"
+          if [ "$TARGET" = "auto" ]; then
+            if ! git rev-parse HEAD~1 &>/dev/null; then
+              echo "==> No parent commit found. Running full Bicep rollout..."
+              TARGET="containers"
+            elif git diff --name-only HEAD~1 HEAD | grep -E "^(bicep/|deploy\.sh)"; then
+              echo "==> Infrastructure or deployment script changes detected. Running full Bicep rollout..."
+              TARGET="containers"
+            else
+              echo "==> Application code changes only. Running fast container update (skipping Bicep)..."
+              TARGET="update"
+            fi
+          fi
+
+          ./deploy.sh "$TARGET"
