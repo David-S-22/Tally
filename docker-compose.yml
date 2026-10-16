@@ -120,6 +120,8 @@ services:
       MCP_ENABLED: ${MCP_ENABLED:-true}
       MCP_SERVER_URL: http://host.docker.internal:8000/mcp
       RAG_ENABLED: ${RAG_ENABLED:-true}
+      MULTI_AGENT_ENABLED: ${MULTI_AGENT_ENABLED:-true}
+      MULTI_AGENT_SERVER_URL: http://host.docker.internal:5010
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
