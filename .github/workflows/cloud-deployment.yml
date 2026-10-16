@@ -1,0 +1,48 @@
+name: Deploy-To-Azure
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "aiden/**"
+      - "david/**"
+      - "ethan/**"
+      - "janelle/**"
+      - "sophia/**"
+      - "shared/**"
+      - "bicep/**"
+      - "deploy.sh"
+      - ".github/workflows/cloud-deployment.yml"
+      - ".dockerignore"
+  workflow_dispatch:
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    name: Build and deploy containers to Azure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy containers
+        run: |
+          chmod +x ./deploy.sh
+          ./deploy.sh containers
