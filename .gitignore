@@ -11,3 +11,6 @@ pytest.ini
 reports/
 .mypy_cache/
 docker-compose.override.yml
+bicep/*.json
+bicep/**/*.json
+*.pem
