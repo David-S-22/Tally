@@ -4,13 +4,6 @@ on:
   pull_request:
     branches:
       - "main"
-    paths:
-      - "sophia/**"
-      - ".github/workflows/Sophia-CI.yml"
-      - "shared/**"
-      - "ai-services/rag-server/sources/billing/**"
-      - "ai-services/mcp-server/**"
-      - "docker-compose.yml"
   push:
     branches:
       - "main"
@@ -28,7 +21,30 @@ env:
   RAG_ENABLED: "false"
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      src: ${{ steps.filter.outputs.src }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            src:
+              - "sophia/**"
+              - ".github/workflows/Sophia-CI.yml"
+              - "shared/**"
+              - "ai-services/rag-server/sources/billing/**"
+              - "ai-services/mcp-server/**"
+              - "docker-compose.yml"
+
   test:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.src == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -48,7 +64,8 @@ jobs:
   docker-health:
     name: Bills container health with AI-Mode, MCP and RAG disabled
     runs-on: ubuntu-latest
-    needs: test
+    needs: [changes, test]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.src == 'true'
     steps:
       - uses: actions/checkout@v6
       - run: docker compose build bills-frontend bills-backend bills-db

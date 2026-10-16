@@ -4,10 +4,6 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - .github/workflows/Ethan-ci.yml
-      - ethan/**
-      - docker-compose.yml
   push:
     branches:
       - main
@@ -17,7 +13,27 @@ on:
       - docker-compose.yml
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      src: ${{ steps.filter.outputs.src }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            src:
+              - .github/workflows/Ethan-ci.yml
+              - ethan/**
+              - docker-compose.yml
+
   test:
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.src == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -35,7 +51,8 @@ jobs:
     env:
       MCP_ENABLED: "false"
       RAG_ENABLED: "false"
-    needs: test
+    needs: [changes, test]
+    if: github.event_name == 'push' || needs.changes.outputs.src == 'true'
     steps:
       - uses: actions/checkout@v6
       - run: docker compose build budgets-frontend budgets-backend budgets-db
