@@ -14,6 +14,7 @@ on:
       - "bicep/**"
       - "deploy.sh"
       - ".github/workflows/cloud-deployment.yml"
+      - ".dockerignore"
   workflow_dispatch:
 
 concurrency:
