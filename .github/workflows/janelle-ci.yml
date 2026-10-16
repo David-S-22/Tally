@@ -4,11 +4,6 @@ on:
   pull_request:
     branches:
       - "main"
-    paths:
-      - .github/workflows/janelle-ci.yml
-      - docker-compose.yml
-      - janelle/**
-      - shared/**
   push:
     branches:
       - "main"
@@ -20,9 +15,28 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      src: ${{ steps.filter.outputs.src }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            src:
+              - .github/workflows/janelle-ci.yml
+              - docker-compose.yml
+              - janelle/**
+              - shared/**
+
   test:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.src == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -35,8 +49,9 @@ jobs:
         run: python -m pytest janelle/test -q
 
   build-health: # Check docker container health after startup
+    needs: [changes, test]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.src == 'true'
     runs-on: ubuntu-latest
-    needs: test
     steps:
       - uses: actions/checkout@v6
       - run: docker compose up --no-deps --detach transactions-frontend transactions-backend transactions-db
