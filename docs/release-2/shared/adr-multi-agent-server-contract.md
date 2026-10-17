@@ -49,9 +49,9 @@ data. The server never reads or writes a feature database.
 | Item | Value |
 | --- | --- |
 | Bind | `0.0.0.0:5010` (`MULTI_AGENT_PORT`); containers reach it at `http://host.docker.internal:5010` through the existing `extra_hosts: host-gateway` |
-| Models | Planner and Worker `qwen2.5:0.5b`, Reviewer `llama3.1:8b`, via `OLLAMA_BASE_URL` (default `http://127.0.0.1:11434`), the pair the shared loop already pulls |
+| Models | Planner and Worker `qwen2.5:0.5b`, Reviewer `llama3.1:8b`, via `OLLAMA_BASE_URL` (default `http://localhost:11434/v1`, the OpenAI-compatible endpoint `agentic_loop/main.py` already defaults to), the pair the shared loop already pulls |
 | Prompts | `prompts/multi_agent/{planner,worker,reviewer}_prompt.txt`, the folder convention the loop uses, so the Multi-Agent Review mode can read them |
-| Timeouts | `AGENT_STEP_TIMEOUT_SECONDS` (default 60); a step that times out is recorded with `"status": "timeout"` and the workflow continues to human review, as in Lab 10 |
+| Timeouts | `AGENT_STEP_TIMEOUT_SECONDS`, per agent step (default 180, matching the Ollama client timeout in `aiden/backend/services/ollama_api.py`). Raise it for large models on CPU-only hosts, including the cloud Ollama VM, which has no GPU. A step that times out is recorded with `"status": "timeout"` and the workflow continues to human review, as in Lab 10 |
 | Logs | `ai-services/multi-agent-server/logs/workflow_history.jsonl` and `coordination_audit.jsonl`, gitignored; one sample run per feature committed under `docs/release-2/<name>/multi-agent/` |
 | Cloud | Not deployed in the required build. Bicep gains `enableMultiAgent` (default `false`) beside `enableMcp` and `enableRag`, so every backend gets `MULTI_AGENT_ENABLED=false`. Bonus B4 enables it on the Ollama VM |
 
@@ -63,8 +63,8 @@ recorded) or 503 (no model output could be produced).
 
 | Route | Purpose |
 | --- | --- |
-| `POST /workflow` | Run Planner → Worker → Reviewer and stop at human review. Blocks until the Reviewer finishes (5–30 s locally; clients allow 90 s) |
-| `POST /workflow/<id>/decision` | Record the human decision. Second decision for the same id → 409 |
+| `POST /workflow` | Run Planner → Worker → Reviewer and stop at human review. Returns the full record, including the `workflow_id` the decision call needs. Blocks until the Reviewer finishes (5–30 s against the stub agents; minutes against real models on CPU). The caller that waits is the feature backend, not anything in the cloud: its `MULTI_AGENT_TIMEOUT_SECONDS` must cover all three steps, so ≥ 3 × `AGENT_STEP_TIMEOUT_SECONDS` |
+| `POST /workflow/<id>/decision` | Record the human decision. `<id>` is the `workflow_id` returned by `POST /workflow` — see the response body below. Second decision for the same id → 409 |
 | `GET /workflow/<id>` | One record, with `human_decision` as it stands |
 | `GET /workflow/status` | Counts of history, audit, pending decisions, per-feature totals and the latest record; `?feature=` filters |
 | `GET /health` | `{"service", "ok", "ollama", "models", "mcp"}`, same shape as the backends' `/health` so the loop and `deploy.sh health` probe it alike |
@@ -139,7 +139,8 @@ terminal" and the fastest way to capture report samples.
 1. A client with `MULTI_AGENT_ENABLED` (false in code, `${…:-true}` in
    compose, false in CI and cloud), `MULTI_AGENT_SERVER_URL` (default
    `http://host.docker.internal:5010`) and `MULTI_AGENT_TIMEOUT_SECONDS`
-   (default 90), the `MCP_ENABLED` / `MCP_SERVER_URL` pattern.
+   (default 600: three agent steps at the 180 s default, plus overhead), the
+   `MCP_ENABLED` / `MCP_SERVER_URL` pattern.
 2. One route that gathers evidence and calls `POST /workflow`, one that
    forwards the decision and applies `final_output`; both return 503
    `{"code": "multi_agent_disabled"}` when off, like the MCP and RAG routes.
