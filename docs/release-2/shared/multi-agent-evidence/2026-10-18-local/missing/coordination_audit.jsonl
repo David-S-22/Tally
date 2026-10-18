@@ -1,0 +1,5 @@
+{"event": "workflow_started", "feature": "budgets", "request_id": "33c124c8-9cb0-4306-ae41-d92ba2c018d9", "ts": "2026-10-18T05:53:14.275Z", "workflow_id": "7bbe8f4b-da95-417d-aa99-3a1253dd68cd"}
+{"agent": "planner_agent", "event": "agent_started", "feature": "budgets", "request_id": "33c124c8-9cb0-4306-ae41-d92ba2c018d9", "ts": "2026-10-18T05:53:14.283Z", "workflow_id": "7bbe8f4b-da95-417d-aa99-3a1253dd68cd"}
+{"agent": "planner_agent", "duration_ms": 16766, "event": "agent_finished", "feature": "budgets", "request_id": "33c124c8-9cb0-4306-ae41-d92ba2c018d9", "status": "error", "ts": "2026-10-18T05:53:31.064Z", "workflow_id": "7bbe8f4b-da95-417d-aa99-3a1253dd68cd"}
+{"code": "invalid_model_output", "event": "error", "feature": "budgets", "request_id": "33c124c8-9cb0-4306-ae41-d92ba2c018d9", "ts": "2026-10-18T05:53:31.075Z", "workflow_id": "7bbe8f4b-da95-417d-aa99-3a1253dd68cd"}
+{"event": "handoff", "feature": "budgets", "from": "coordinator", "human_approval_required": true, "request_id": "33c124c8-9cb0-4306-ae41-d92ba2c018d9", "to": "human_reviewer", "ts": "2026-10-18T05:53:31.086Z", "workflow_id": "7bbe8f4b-da95-417d-aa99-3a1253dd68cd"}
