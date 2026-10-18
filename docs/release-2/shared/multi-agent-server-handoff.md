@@ -1,7 +1,8 @@
 # Shared Multi-Agent Server: feature-owner handoff
 
 This covers the local shared tool only. No feature routes, UI, databases,
-Compose services or cloud infrastructure are changed. Use the
+Compose services or cloud infrastructure are added. The earlier Bills-specific
+integration and its configuration have been removed from this branch. Use the
 [setup guide](../../../ai-services/multi-agent-server/README.md) and
 [versioned HTTP contract](multi-agent-server-contract.md) together.
 
@@ -34,8 +35,8 @@ Expect `ready: True` and no missing models. A call without the token must receiv
 
 Use a workflow request timeout above the configured overall deadline:
 550 seconds is the initial minimum recommendation for a 540-second workflow.
-Allow more overhead on slow machines. The unchanged Bills stub caller's
-90-second timeout and missing token forwarding must be addressed by its owner.
+Allow more overhead on slow machines. Feature owners must implement timeout
+and token forwarding in their future backend adapters.
 Only one model workflow runs at a time; handle `workflow_busy`/503 and its
 `Retry-After` header without blocking other UI interaction.
 

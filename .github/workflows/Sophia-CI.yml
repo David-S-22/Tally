@@ -10,7 +10,6 @@ on:
       - "shared/**"
       - "ai-services/rag-server/sources/billing/**"
       - "ai-services/mcp-server/**"
-      - "ai-services/multi-agent-server/**"
       - "docker-compose.yml"
   push:
     branches:
@@ -27,7 +26,6 @@ on:
 env:
   MCP_ENABLED: "false"
   RAG_ENABLED: "false"
-  MULTI_AGENT_ENABLED: "false"
 
 jobs:
   test:
@@ -71,7 +69,6 @@ jobs:
           echo "$body"
           echo "$body" | grep '"mcp":"disabled"' || exit 1
           echo "$body" | grep '"rag":"disabled"' || exit 1
-          echo "$body" | grep '"multi_agent":"disabled"' || exit 1
           echo "$body" | grep '"ai":"unavailable"' || exit 1
           echo "$body" | grep '"ollama":"down"' || exit 1
       - name: Check disabled tool and evidence requests are refused with user-level copy

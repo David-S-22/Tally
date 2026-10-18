@@ -91,7 +91,8 @@ a useful contract prototype:
 - A terminal runner using the same coordinator.
 - Contract tests for routes, decisions, logging, filtering, and restart
   recovery.
-- Bills-specific client wiring on the current branch.
+- Bills-specific client wiring originally on the branch, subsequently removed
+  at the user's request to keep the branch shared-server-only.
 
 The agents in `agents.py` currently return deterministic `[stub]` output and
 make no model calls. The server's health route reports a stub model. This plan
@@ -309,9 +310,8 @@ Optional cloud bonus:
   branch behavior.
 - Freeze request/response schemas, statuses, decisions, failure semantics,
   feature identifiers, and persistence/audit events.
-- Preserve compatibility with the existing Bills client wherever possible.
-  Document any necessary migration for its owner rather than changing
-  individual feature code within this work.
+- Preserve common stub contract fields wherever possible. Document migration
+  requirements for future feature adapters without implementing those adapters.
 
 **Gate:** contract examples and schema tests pass; feature owners can build
 clients against the documented interface without needing server changes for
@@ -366,8 +366,8 @@ tests via HTTP and terminal paths.
   owning backend.
 - Document configuration, local setup, model requirements, server lifecycle,
   health checks, logs, security limitations, and failure recovery.
-- Mark the Bills integration as one existing example only; do not expand the
-  server work into other feature implementations.
+- Keep feature integrations out of the branch; use generic synthetic examples
+  rather than feature-owned implementations.
 - Provide a machine-readable report/evidence format consumable by the separate
   agentic-loop Multi-Agent Review mode.
 
@@ -476,7 +476,7 @@ a performance guarantee or proof of model quality across all domain tasks.
 Outstanding group/operational gates remain:
 
 - Feature-owner acknowledgement of stricter authentication, reason and timeout
-  requirements before integrating; the existing Bills stub client is unchanged.
+  requirements before implementing their feature adapters.
 - Genuine person-led review and feature-owner deployment/integration evidence;
   automated synthetic decision exercises are not human approval.
 - Full multi-terminal, non-containerised local AI deployment evidence. The
@@ -539,3 +539,16 @@ Inference used the existing local Ollama container; the server itself ran on
 the host. Full host-run AI/MCP/RAG deployment remains a separate group gate.
 No feature code (including `ethan/budgets`), Compose topology or cloud
 infrastructure was changed, and all changes remain unstaged/uncommitted.
+
+### Shared-only branch cleanup - 18 October 2026
+
+At the user's request, removed the earlier Bills-specific integration from the
+working tree: its HTTP client/service, dispute workflow routes, feature tests,
+health/configuration/errors, README section and related Compose, Bicep and
+Sophia-CI additions. Those paths now match `main`. Existing Bills functionality
+is preserved; future integration belongs to its feature owner.
+
+The shared server, its dedicated CI/tests, prompts, generic `bills` feature
+identifier and synthetic evaluation evidence remain. This cleanup is an
+unstaged local change; it does not rewrite committed history or update the
+remote PR until the user explicitly commits and pushes it.

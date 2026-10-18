@@ -64,7 +64,6 @@ def create_app():
                     "ai": "enabled" if ollama == "up" else "unavailable",
                     "mcp": "enabled" if config.MCP_ENABLED else "disabled",
                     "rag": "enabled" if config.RAG_ENABLED else "disabled",
-                    "multi_agent": "enabled" if config.MULTI_AGENT_ENABLED else "disabled",
                 },
             }
         )

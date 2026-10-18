@@ -99,10 +99,10 @@ It refuses an existing directory to avoid overwriting evidence.
 | `MULTI_AGENT_LOG_DIR` | `ai-services/multi-agent-server/logs` |
 
 The HTTP timeout in future feature clients must exceed the workflow deadline
-plus overhead (550 seconds initially). The existing Bills stub client uses 90
-seconds and needs an owner-managed timeout/authentication update for real runs.
-The existing client routes/fields remain, but stricter decision rules also need
-to be observed; see contract migration notes.
+plus overhead (550 seconds initially). Feature owners must implement token
+forwarding and the documented decision requirements in their own adapters.
+The earlier Bills-specific stub integration has been removed from this branch;
+no individual feature integration is included.
 
 ## State, audit and evidence
 

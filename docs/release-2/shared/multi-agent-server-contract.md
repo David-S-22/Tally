@@ -162,17 +162,17 @@ Routes and common result fields remain. Intentional differences:
 1. Real roles use native Ollama `OLLAMA_URL`, not the proposal's `/v1`
    `OLLAMA_BASE_URL`; default Planner/Worker are 3b, Reviewer 8b.
 2. Loopback by default; reachable binding requires a token. Clients must send it
-   when enabled. This includes any existing Bills client, whose owner must update
-   it separately; no feature code is changed in this work.
+   when enabled. Individual feature clients are owner-managed work; the earlier
+   Bills-specific integration has been removed from this branch.
 3. Strict validation, reason requirements, safe failed-stage handling and
    reject-only failures replace permissive stub behavior.
 4. The terminal runner uses HTTP; SQLite replaces JSONL as authoritative state.
 5. One active workflow, bounded execution, explicit readiness and export APIs.
 6. No per-feature prompt fragments and no `options.use_mcp`.
 
-The original Bills client timeout of 90 seconds is insufficient for the default
-real-model deadline. Feature owners must update timeout/authentication/reason
-handling before claiming end-to-end integration.
+The earlier stub client's 90-second timeout is insufficient for the default
+real-model deadline. Future feature clients must implement the documented
+timeout/authentication/reason handling before claiming end-to-end integration.
 
 ## Rubric boundary
 
