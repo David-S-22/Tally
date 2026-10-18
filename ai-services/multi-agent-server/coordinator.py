@@ -1,213 +1,343 @@
-"""Runs Planner -> Worker -> Reviewer, holds the human decision, writes the logs.
-
-The coordinator is the only thing that touches the two JSON Lines files
-(``workflow_history.jsonl``, ``coordination_audit.jsonl``). Records live in
-memory keyed by ``workflow_id`` and are rebuilt from the history file at
-start-up, so a restart does not lose pending decisions.
-"""
-import json
+import logging
+import threading
 import time
 import uuid
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 
-import agents
+from agents import AgentError, Agents
+from contracts import (
+    DECISION_SCHEMA,
+    DECISIONS,
+    FEATURES,
+    VERSION,
+    WorkflowError,
+    validate,
+    validate_request,
+)
+from settings import Settings
+from storage import Store
 
-FEATURES = ("transactions", "savings", "anomalies", "bills", "budgets")
-DECISIONS = ("Accept", "Partially Accept", "Reject")
+logger = logging.getLogger(__name__)
 AGENT_ORDER = ["planner_agent", "worker_agent", "reviewer_agent"]
 
 
-class WorkflowError(Exception):
-    """A request the contract rejects; ``status`` is the HTTP code to return."""
-
-    def __init__(self, status, message):
-        super().__init__(message)
-        self.status = status
-
-
 def now_iso():
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 class Coordinator:
-    def __init__(self, log_dir):
-        self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
-        self.history_path = self.log_dir / "workflow_history.jsonl"
-        self.audit_path = self.log_dir / "coordination_audit.jsonl"
-        self.records = {}
-        for record in self._read(self.history_path):
-            self.records[record["workflow_id"]] = record  # last line per id wins
+    def __init__(self, log_dir=None, settings=None, agents=None):
+        self.settings = settings or Settings()
+        self.agents = agents or Agents(self.settings)
+        self.store = Store(log_dir or self.settings.data_dir)
+        self.gate = threading.Lock()
+        for record in self.store.all():
+            if record["workflow_state"] == "running":
+                record, revision = self.store.get(record["workflow_id"])
+                record.update(
+                    status="error",
+                    workflow_state="failed",
+                    error="Workflow interrupted by server restart",
+                    code="workflow_interrupted",
+                )
+                record["human_decision"] = {
+                    "required": True,
+                    "status": "pending",
+                    "allowed_values": ["Reject"],
+                }
+                self._save(
+                    record,
+                    revision,
+                    self._event(record, "error", code="workflow_interrupted"),
+                )
 
-    # --- public API, one method per route ---------------------------------
+    def _event(self, record, event, **fields):
+        return {
+            "ts": now_iso(),
+            "workflow_id": record["workflow_id"],
+            "feature": record["feature"],
+            "event": event,
+            "request_id": record.get("request_id"),
+            **fields,
+        }
 
-    def run_workflow(self, body):
-        feature, task, evidence, context, options = self._validate_request(body)
-        reuse = options.get("reuse_plan")
+    def _save(self, record, revision, *events):
+        self.store.save(record, events, revision)
+        return 0 if revision is None else revision + 1
+
+    def run_workflow(self, body, request_id=None):
+        validate_request(body)
+        if not self.gate.acquire(blocking=False):
+            raise WorkflowError(
+                503, "Workflow capacity reached; retry later", "workflow_busy"
+            )
+        try:
+            return self._run(body, request_id)
+        finally:
+            self.gate.release()
+
+    def _run(self, body, request_id):
+        started = time.monotonic()
+        deadline = started + self.settings.workflow_timeout
+        reuse = body.get("options", {}).get("reuse_plan")
         if reuse:
-            record = self._get(reuse)
-            if record["human_decision"]["status"] != "awaiting_evidence":
-                raise WorkflowError(409, f"workflow {reuse} already has worker and reviewer results")
-            record["_started"] = time.monotonic()
-            self._audit(record, "workflow_resumed", evidence_count=len(evidence))
+            record, revision = self.store.get(reuse)
+            if record["workflow_state"] != "awaiting_evidence":
+                raise WorkflowError(
+                    409, "Workflow is not awaiting evidence", "workflow_conflict"
+                )
+            if any(
+                body.get(key, {}) != record.get(key, {})
+                for key in ("feature", "task", "context")
+            ):
+                raise WorkflowError(
+                    409,
+                    "Resume must preserve feature, task and context",
+                    "workflow_conflict",
+                )
+            incoming = {e["source"]: e for e in body["evidence"]}
+            if any(incoming.get(e["source"]) != e for e in record["evidence"]):
+                raise WorkflowError(
+                    409,
+                    "Resume must retain existing evidence unchanged",
+                    "workflow_conflict",
+                )
+            record.update(
+                evidence=body["evidence"],
+                workflow_state="running",
+                request_id=request_id,
+            )
+            record["human_decision"] = {"required": True, "status": "not_ready"}
+            revision = self._save(
+                record,
+                revision,
+                self._event(
+                    record, "workflow_resumed", evidence_count=len(body["evidence"])
+                ),
+            )
         else:
-            record = self._new_record(feature, task)
-            self._audit(record, "workflow_started", task=task)
-            record["planner_result"] = self._timed(record, agents.plan, task, evidence, context)
-
-        if options.get("plan_only"):
+            record = {
+                "contract_version": VERSION,
+                "status": "success",
+                "workflow_state": "running",
+                "workflow_id": str(uuid.uuid4()),
+                "feature": body["feature"],
+                "task": body["task"],
+                "context": body.get("context", {}),
+                "evidence": body["evidence"],
+                "timestamp": now_iso(),
+                "duration_ms": 0,
+                "request_id": request_id,
+                "participating_agents": list(AGENT_ORDER),
+                "planner_result": None,
+                "worker_result": None,
+                "reviewer_result": None,
+                "human_decision": {"required": True, "status": "not_ready"},
+                "prompt_version": self.agents.prompt_version,
+            }
+            revision = self._save(record, None, self._event(record, "workflow_started"))
+        roles = ["worker", "reviewer"] if reuse else ["planner", "worker", "reviewer"]
+        if body.get("options", {}).get("plan_only"):
+            roles = ["planner"]
+        for role in roles:
+            revision = self._save(
+                record,
+                revision,
+                self._event(record, "agent_started", agent=f"{role}_agent"),
+            )
+            payload = {key: record[key] for key in ("task", "evidence", "context")}
+            if role != "planner":
+                payload["planner_result"] = record["planner_result"]
+            if role == "reviewer":
+                payload["worker_result"] = record["worker_result"]
+            step_started = time.monotonic()
+            try:
+                result = self.agents.run(
+                    role,
+                    payload,
+                    min(deadline, step_started + self.settings.step_timeout),
+                )
+            except AgentError as exc:
+                result = {
+                    "status": exc.status,
+                    "agent": f"{role}_agent",
+                    "model": self.settings.models[role],
+                    "code": exc.code,
+                    "error": str(exc),
+                    "human_approval_required": True,
+                }
+            except Exception:
+                logger.exception(
+                    "Unexpected agent failure workflow_id=%s role=%s",
+                    record["workflow_id"],
+                    role,
+                )
+                result = {
+                    "status": "error",
+                    "agent": f"{role}_agent",
+                    "code": "agent_failure",
+                    "error": "Agent failed unexpectedly",
+                    "human_approval_required": True,
+                }
+            result["duration_ms"] = int((time.monotonic() - step_started) * 1000)
+            record[f"{role}_result"] = result
+            record["duration_ms"] += result["duration_ms"]
+            revision = self._save(
+                record,
+                revision,
+                self._event(
+                    record,
+                    "agent_finished",
+                    agent=f"{role}_agent",
+                    status=result["status"],
+                    duration_ms=result["duration_ms"],
+                    **({"verdict": result["verdict"]} if "verdict" in result else {}),
+                ),
+            )
+            if result["status"] != "success":
+                record.update(
+                    status="error",
+                    workflow_state="failed",
+                    error=result["error"],
+                    code=result["code"],
+                )
+                for remaining in roles[roles.index(role) + 1 :]:
+                    record[f"{remaining}_result"] = {
+                        "status": "skipped",
+                        "agent": f"{remaining}_agent",
+                        "human_approval_required": True,
+                    }
+                break
+        if record["workflow_state"] == "failed":
+            allowed = ["Reject"]
+            revision = self._save(
+                record,
+                revision,
+                self._event(record, "error", code=record["code"]),
+            )
+        elif body.get("options", {}).get("plan_only"):
+            record["workflow_state"] = "awaiting_evidence"
             record["human_decision"] = {"required": True, "status": "awaiting_evidence"}
-            self._finish(record)
+            self._save(record, revision, self._event(record, "awaiting_evidence"))
             return record
-
-        record["evidence"] = evidence
-        record["worker_result"] = self._timed(
-            record, agents.work, task, evidence, context, record["planner_result"]
+        else:
+            allowed = list(DECISIONS)
+            record["workflow_state"] = "pending"
+        record["human_decision"] = {
+            "required": True,
+            "status": "pending",
+            "allowed_values": allowed,
+        }
+        self._save(
+            record,
+            revision,
+            self._event(
+                record,
+                "handoff",
+                **{
+                    "from": "coordinator"
+                    if record["workflow_state"] == "failed"
+                    else "reviewer_agent",
+                    "to": "human_reviewer",
+                    "human_approval_required": True,
+                },
+            ),
         )
-        record["reviewer_result"] = self._timed(
-            record, agents.review, task, evidence, record["planner_result"], record["worker_result"]
-        )
-        record["human_decision"] = {"required": True, "status": "pending", "allowed_values": list(DECISIONS)}
-        self._audit(record, "handoff", **{"from": "reviewer_agent", "to": "human_reviewer", "human_approval_required": True})
-        self._finish(record)
         return record
 
     def record_decision(self, workflow_id, body):
-        record = self._get(workflow_id)
-        if record["human_decision"]["status"] != "pending":
-            raise WorkflowError(409, f"workflow {workflow_id} is not awaiting a decision")
-        decision = body.get("decision")
-        if decision not in DECISIONS:
-            raise WorkflowError(400, f"decision must be one of {list(DECISIONS)}")
+        validate(body, DECISION_SCHEMA)
+        record, revision = self.store.get(workflow_id)
+        human = record["human_decision"]
+        if human["status"] != "pending":
+            raise WorkflowError(
+                409, "Workflow is not awaiting a decision", "workflow_conflict"
+            )
+        decision = body["decision"]
+        if decision not in human["allowed_values"]:
+            raise WorkflowError(
+                409, "Failed workflows can only be rejected", "workflow_conflict"
+            )
         corrected = body.get("corrected_output")
-        if decision == "Partially Accept" and corrected in (None, ""):
-            raise WorkflowError(400, "corrected_output is required for Partially Accept")
-        if decision == "Reject" and corrected is not None:
-            raise WorkflowError(400, "corrected_output must be absent for Reject")
-
-        worker = record["worker_result"]
-        final = {
-            "Accept": worker.get("structured") if worker.get("structured") is not None else worker.get("output"),
-            "Partially Accept": corrected,
-            "Reject": None,
-        }[decision]
+        reason = body.get("reason") or ""
+        if decision == "Partially Accept":
+            if (
+                not corrected
+                or (isinstance(corrected, str) and not corrected.strip())
+                or not reason.strip()
+            ):
+                raise WorkflowError(
+                    400, "Partial acceptance requires corrected_output and a reason"
+                )
+            worker = record["worker_result"]
+            if (worker.get("structured") is not None) != isinstance(corrected, dict):
+                raise WorkflowError(
+                    400,
+                    "Corrected output must match the Worker's text/object output type",
+                )
+        elif corrected is not None:
+            raise WorkflowError(
+                400, "corrected_output is only allowed for partial acceptance"
+            )
+        reviewer = record.get("reviewer_result") or {}
+        if (
+            decision != "Reject"
+            and reviewer.get("verdict") != "approve"
+            and not reason.strip()
+        ):
+            raise WorkflowError(400, "Overriding review warnings requires a reason")
+        worker = record.get("worker_result") or {}
+        final = (
+            worker.get("structured")
+            if worker.get("structured") is not None
+            else worker.get("output")
+        )
+        if decision == "Partially Accept":
+            final = corrected
+        elif decision == "Reject":
+            final = None
         record["human_decision"] = {
             "required": True,
             "status": "recorded",
             "decision": decision,
             "final_output": final,
             "reason": body.get("reason"),
-            "decided_by": body.get("decided_by") or "demo",
+            "decided_by": body.get("decided_by") or "unspecified",
             "timestamp": now_iso(),
         }
-        self._audit(record, "human_decision", decision=decision, decided_by=record["human_decision"]["decided_by"])
-        self._append(self.history_path, record)
+        record["workflow_state"] = "decided"
+        self._save(
+            record,
+            revision,
+            self._event(
+                record,
+                "human_decision",
+                decision=decision,
+                decided_by=record["human_decision"]["decided_by"],
+            ),
+        )
         return record
 
     def get_workflow(self, workflow_id):
-        return self._get(workflow_id)
+        return self.store.get(workflow_id)[0]
 
     def status(self, feature=None):
-        records = [r for r in self.records.values() if feature in (None, r["feature"])]
-        records.sort(key=lambda r: r["timestamp"])
-        by_feature = {}
-        for r in records:
-            by_feature[r["feature"]] = by_feature.get(r["feature"], 0) + 1
+        if feature is not None and feature not in FEATURES:
+            raise WorkflowError(400, "Unknown feature filter")
+        records = self.store.all(feature)
         return {
             "status": "success",
+            "contract_version": VERSION,
             "workflow_history_count": len(records),
-            "audit_record_count": sum(1 for a in self._read(self.audit_path) if feature in (None, a["feature"])),
-            "pending_decisions": sum(1 for r in records if r["human_decision"]["status"] == "pending"),
-            "by_feature": by_feature,
+            "audit_record_count": self.store.event_count(feature),
+            "pending_decisions": sum(
+                r["human_decision"]["status"] == "pending" for r in records
+            ),
+            "by_feature": {
+                f: sum(r["feature"] == f for r in records)
+                for f in FEATURES
+                if any(r["feature"] == f for r in records)
+            },
             "latest_workflow": records[-1] if records else None,
+            "export_mode": "on_demand",
         }
-
-    # --- internals ---------------------------------------------------------
-
-    def _validate_request(self, body):
-        if not isinstance(body, dict):
-            raise WorkflowError(400, "JSON body required")
-        feature = body.get("feature")
-        if feature not in FEATURES:
-            raise WorkflowError(400, f"feature must be one of {list(FEATURES)}")
-        task = (body.get("task") or "").strip()
-        if not task:
-            raise WorkflowError(400, "task is required")
-        evidence = body.get("evidence")
-        if not isinstance(evidence, list) or any(
-            not isinstance(e, dict) or "source" not in e or "summary" not in e for e in evidence
-        ):
-            raise WorkflowError(400, "evidence must be a list of {source, summary, data?}")
-        options = body.get("options") or {}
-        return feature, task, evidence, body.get("context") or {}, options
-
-    def _new_record(self, feature, task):
-        record = {
-            "status": "success",
-            "workflow_id": str(uuid.uuid4()),
-            "feature": feature,
-            "task": task,
-            "timestamp": now_iso(),
-            "duration_ms": 0,
-            "participating_agents": list(AGENT_ORDER),
-            "planner_result": None,
-            "worker_result": None,
-            "reviewer_result": None,
-            "human_decision": None,
-            "_started": time.monotonic(),
-        }
-        self.records[record["workflow_id"]] = record
-        return record
-
-    def _get(self, workflow_id):
-        record = self.records.get(workflow_id)
-        if record is None:
-            raise WorkflowError(404, f"unknown workflow {workflow_id}")
-        return record
-
-    def _timed(self, record, agent_fn, *args):
-        started = time.monotonic()
-        try:
-            result = agent_fn(*args)
-        except Exception as exc:  # a model call failing must not lose the workflow
-            result = {
-                "status": "error",
-                "agent": agent_fn.__name__ + "_agent",
-                "error": str(exc),
-                "human_approval_required": True,
-            }
-            if agent_fn is agents.work:
-                result.update(evidence_count=0, evidence_used=[], output="", structured=None)
-        duration = int((time.monotonic() - started) * 1000)
-        extra = {}
-        if "evidence_count" in result:
-            extra["evidence_count"] = result["evidence_count"]
-        if "verdict" in result:
-            extra["verdict"] = result["verdict"]
-        self._audit(record, "agent_finished", agent=result["agent"], status=result["status"], duration_ms=duration, **extra)
-        return result
-
-    def _finish(self, record):
-        started = record.pop("_started", None)
-        if started is not None:
-            record["duration_ms"] = int((time.monotonic() - started) * 1000)
-        self._append(self.history_path, record)
-
-    def _audit(self, record, event, **fields):
-        line = {"ts": now_iso(), "workflow_id": record["workflow_id"], "feature": record["feature"], "event": event}
-        line.update(fields)
-        self._append(self.audit_path, line)
-
-    @staticmethod
-    def _append(path, obj):
-        clean = {k: v for k, v in obj.items() if not k.startswith("_")}
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(clean) + "\n")
-
-    @staticmethod
-    def _read(path):
-        if not path.exists():
-            return []
-        with path.open(encoding="utf-8") as fh:
-            return [json.loads(line) for line in fh if line.strip()]

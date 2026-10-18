@@ -17,3 +17,5 @@ bicep/**/*.json
 
 # Multi-Agent Server run logs (samples are committed under docs/release-2/<name>/multi-agent/)
 ai-services/multi-agent-server/logs/*.jsonl
+ai-services/multi-agent-server/logs/*.tmp
+ai-services/multi-agent-server/logs/server.lock

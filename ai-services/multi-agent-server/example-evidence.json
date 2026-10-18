@@ -1,0 +1,12 @@
+[
+  {
+    "source": "example:expense",
+    "summary": "Synthetic example: one grocery expense of AUD 20 on 2026-10-01.",
+    "data": {
+      "amount": 20,
+      "currency": "AUD",
+      "date": "2026-10-01",
+      "category": "groceries"
+    }
+  }
+]

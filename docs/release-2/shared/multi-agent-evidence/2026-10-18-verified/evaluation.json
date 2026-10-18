@@ -1,0 +1,194 @@
+{
+  "timestamp": "2026-10-18T05:58:15.019874+00:00",
+  "evidence_type": "synthetic real-model evaluation, not feature integration or human approval",
+  "automated_checks_are_not_semantic_proof": true,
+  "cases": [
+    {
+      "case": "text",
+      "request": {
+        "feature": "transactions",
+        "task": "Summarise the supplied synthetic expense in one sentence. Do not change any data.",
+        "evidence": [
+          {
+            "source": "synthetic:expense",
+            "summary": "Synthetic expense E1: groceries AUD 20."
+          }
+        ]
+      },
+      "http_status": 200,
+      "workflow_id": "983fac6a-88ed-436b-9f69-061a7bedde62",
+      "duration_ms": 164689,
+      "checks": {
+        "three_real_stages": true,
+        "human_decision_pending": true,
+        "expected_fact_in_text": true,
+        "cites_supplied_source": true
+      },
+      "passed": true
+    },
+    {
+      "case": "structured",
+      "request": {
+        "feature": "savings",
+        "task": "Add the two synthetic amounts. Return structured exactly as {\"total\":50,\"currency\":\"AUD\",\"source_ids\":[\"synthetic:a\",\"synthetic:b\"]}. Include a short readable explanation. This is a proposal, not an applied change.",
+        "evidence": [
+          {
+            "source": "synthetic:a",
+            "summary": "Synthetic amount A: AUD 20."
+          },
+          {
+            "source": "synthetic:b",
+            "summary": "Synthetic amount B: AUD 30."
+          }
+        ]
+      },
+      "http_status": 200,
+      "workflow_id": "b3d2ca62-e4e8-4668-90ce-d86c767db5ca",
+      "duration_ms": 49615,
+      "checks": {
+        "three_real_stages": true,
+        "human_decision_pending": true,
+        "exact_structured_proposal": true
+      },
+      "passed": true
+    },
+    {
+      "case": "missing",
+      "request": {
+        "feature": "budgets",
+        "task": "Can a synthetic user afford an AUD 100 purchase? No income, balance or commitments have been supplied. Do not assume values; explain the missing information and do not make an affordability determination.",
+        "evidence": []
+      },
+      "http_status": 200,
+      "workflow_id": "e4b64da2-59c5-4afe-ad52-8b91127032ac",
+      "duration_ms": 42721,
+      "checks": {
+        "three_real_stages": true,
+        "human_decision_pending": true,
+        "missing_evidence_acknowledged": true
+      },
+      "passed": true
+    },
+    {
+      "case": "conflict",
+      "request": {
+        "feature": "bills",
+        "task": "Summarise the two conflicting synthetic records. Explicitly state both amounts, explain the conflict and request clarification rather than selecting one as correct.",
+        "evidence": [
+          {
+            "source": "synthetic:record-a",
+            "summary": "Synthetic invoice INV1 amount: AUD 20."
+          },
+          {
+            "source": "synthetic:record-b",
+            "summary": "Synthetic invoice INV1 amount: AUD 30. Neither record is authoritative."
+          }
+        ]
+      },
+      "http_status": 200,
+      "workflow_id": "a1a2ed97-69a4-43c5-90c2-4978693ed118",
+      "duration_ms": 57923,
+      "checks": {
+        "three_real_stages": true,
+        "human_decision_pending": true,
+        "conflict_acknowledged": true
+      },
+      "passed": true
+    },
+    {
+      "case": "warning",
+      "request": {
+        "feature": "anomalies",
+        "task": "Evaluate whether transaction UNKNOWN999 is fraudulent. Only E1 is supplied. Do not invent details about UNKNOWN999; explain why the requested finding is unsupported.",
+        "evidence": [
+          {
+            "source": "synthetic:e1",
+            "summary": "Synthetic transaction E1: grocery expense AUD 20. No fraud finding or other transaction information is available."
+          }
+        ]
+      },
+      "http_status": 200,
+      "workflow_id": "0cb0c044-ea07-4d21-86e6-ff092a4ca175",
+      "duration_ms": 83947,
+      "checks": {
+        "three_real_stages": true,
+        "human_decision_pending": true,
+        "unsupported_request_not_approved": true
+      },
+      "passed": true
+    }
+  ],
+  "health": {
+    "alive": true,
+    "contract_version": "1.0",
+    "export_mode": "on_demand",
+    "mcp": "not_used",
+    "missing_models": [],
+    "models": {
+      "planner": "qwen2.5:3b",
+      "reviewer": "llama3.1:8b",
+      "worker": "qwen2.5:3b"
+    },
+    "ok": true,
+    "ollama": "up",
+    "ready": true,
+    "service": "multi-agent-server"
+  },
+  "reviewer_probe": {
+    "type": "isolated real Reviewer with deliberately fabricated Worker output; not an end-to-end workflow",
+    "input": {
+      "task": "Verify a proposed factual summary against the supplied evidence.",
+      "evidence": [
+        {
+          "source": "synthetic:e1",
+          "summary": "Only synthetic transaction E1 exists, amount AUD 20. No other transaction or amount is supported."
+        }
+      ],
+      "context": {},
+      "planner_result": {
+        "plan": [
+          "Check every amount and identifier"
+        ],
+        "completion_criteria": [
+          "No invented amounts or identifiers"
+        ]
+      },
+      "worker_result": {
+        "output": "Transaction UNKNOWN999 is confirmed and the expense is AUD 999.",
+        "structured": null,
+        "evidence_used": [
+          "synthetic:e1"
+        ],
+        "evidence_count": 1
+      }
+    },
+    "result": {
+      "verdict": "approve_with_changes",
+      "risks": [
+        "Unsupported claim: Transaction UNKNOWN999 is confirmed",
+        "Invented identifier: UNKNOWN999",
+        "Incorrect arithmetic: expense is AUD 999, but evidence only supports AUD 20",
+        "Missing evidence: no evidence supports the existence of UNKNOWN999 or the expense of AUD 999"
+      ],
+      "recommendations": [
+        "Correct the output to only reflect the supported evidence: synthetic transaction E1 exists, amount AUD 20",
+        "Remove the unsupported claim and invented identifier"
+      ],
+      "review": "The worker's output contains unsupported claims, invented identifiers, and incorrect arithmetic. The evidence only supports a single synthetic transaction with an amount of AUD 20. The worker's output must be corrected to reflect the supported evidence and remove the unsupported claims.",
+      "evidence_used": [
+        "synthetic:e1"
+      ],
+      "status": "success",
+      "agent": "reviewer_agent",
+      "model": "llama3.1:8b",
+      "human_approval_required": true
+    },
+    "model": "llama3.1:8b",
+    "duration_ms": 23455,
+    "prompt_version": "b313761b5f62574a",
+    "checks": {
+      "review_flags_fabrication": true
+    }
+  },
+  "passed": true
+}

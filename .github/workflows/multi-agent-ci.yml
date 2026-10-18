@@ -1,0 +1,29 @@
+name: Shared Multi-Agent Server
+
+on:
+  pull_request:
+    paths:
+      - "ai-services/multi-agent-server/**"
+      - "prompts/multi_agent/**"
+      - ".github/workflows/multi-agent-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ai-services/multi-agent-server/**"
+      - "prompts/multi_agent/**"
+      - ".github/workflows/multi-agent-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r ai-services/multi-agent-server/requirements.txt pytest
+      - run: python -m pytest ai-services/multi-agent-server -q

@@ -1,62 +1,125 @@
-"""Terminal entry point: run a workflow or record a decision without HTTP.
-
-    python ai-services/multi-agent-server/workflow_runner.py --feature bills \
-        --task "Draft a dispute letter for bill 12" --evidence evidence.json
-    python ai-services/multi-agent-server/workflow_runner.py --decide <id> --decision Accept
-
-Calls the same Coordinator the routes call, so the logs are identical.
-"""
 import argparse
 import json
 import os
 import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+from urllib.parse import urlsplit
 
-sys.path.insert(0, os.path.dirname(__file__))
-
-from coordinator import Coordinator, WorkflowError
-from server import LOG_DIR
+from contracts import DECISIONS, FEATURES
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--feature")
+    parser = argparse.ArgumentParser(
+        description="Run and review workflows through the shared HTTP server"
+    )
+    parser.add_argument(
+        "--url", default=os.getenv("MULTI_AGENT_SERVER_URL", "http://127.0.0.1:5010")
+    )
+    parser.add_argument("--timeout", type=float, default=550)
+    parser.add_argument("--feature", choices=FEATURES)
     parser.add_argument("--task")
-    parser.add_argument("--evidence", help="path to a JSON file holding the evidence list; omit for []")
+    parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--context", type=Path)
     parser.add_argument("--plan-only", action="store_true")
-    parser.add_argument("--decide", metavar="WORKFLOW_ID")
-    parser.add_argument("--decision", choices=["Accept", "Partially Accept", "Reject"])
-    parser.add_argument("--corrected-output", help="text (or @file.json for a structured object)")
-    parser.add_argument("--log-dir", default=LOG_DIR)
+    parser.add_argument("--reuse-plan")
+    operations = parser.add_mutually_exclusive_group()
+    operations.add_argument("--decide")
+    operations.add_argument("--get")
+    operations.add_argument("--export")
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--decision", choices=DECISIONS)
+    parser.add_argument("--corrected-output")
+    parser.add_argument("--reason")
     args = parser.parse_args(argv)
-
-    coordinator = Coordinator(args.log_dir)
+    if args.output_dir and not args.export:
+        parser.error("--output-dir requires --export")
+    origin = urlsplit(args.url)
+    if (
+        origin.scheme not in ("http", "https")
+        or not origin.hostname
+        or origin.username
+        or origin.password
+        or origin.path not in ("", "/")
+        or origin.query
+        or origin.fragment
+    ):
+        parser.error("--url must be an HTTP(S) origin without credentials or a path")
     try:
+        body = None
         if args.decide:
             if not args.decision:
-                parser.error("--decision is required with --decide")
+                parser.error("--decision is required")
             corrected = args.corrected_output
             if corrected and corrected.startswith("@"):
-                with open(corrected[1:], encoding="utf-8") as fh:
-                    corrected = json.load(fh)
-            record = coordinator.record_decision(args.decide, {"decision": args.decision, "corrected_output": corrected, "decided_by": "terminal"})
+                corrected = json.loads(Path(corrected[1:]).read_text(encoding="utf-8"))
+            path = f"/workflow/{args.decide}/decision"
+            body = {
+                "decision": args.decision,
+                "corrected_output": corrected,
+                "reason": args.reason,
+                "decided_by": "terminal",
+            }
+        elif args.get or args.export:
+            path = f"/workflow/{args.get or args.export}" + (
+                "/export" if args.export else ""
+            )
         else:
-            if not (args.feature and args.task):
+            if not args.feature or not args.task:
                 parser.error("--feature and --task are required")
-            evidence = []
-            if args.evidence:
-                with open(args.evidence, encoding="utf-8") as fh:
-                    evidence = json.load(fh)
-            record = coordinator.run_workflow({
+            path = "/workflow"
+            body = {
                 "feature": args.feature,
                 "task": args.task,
-                "evidence": evidence,
-                "options": {"plan_only": args.plan_only},
-            })
-    except WorkflowError as exc:
-        print(json.dumps({"status": "error", "error": str(exc)}), file=sys.stderr)
+                "evidence": json.loads(args.evidence.read_text(encoding="utf-8"))
+                if args.evidence
+                else [],
+                "context": json.loads(args.context.read_text(encoding="utf-8"))
+                if args.context
+                else {},
+                "options": {
+                    "plan_only": args.plan_only,
+                    **({"reuse_plan": args.reuse_plan} if args.reuse_plan else {}),
+                },
+            }
+        headers = {"Content-Type": "application/json"}
+        token = os.getenv("MULTI_AGENT_TOKEN", "")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        request = urllib.request.Request(
+            args.url.rstrip("/") + path,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers=headers,
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=args.timeout) as response:
+                result = json.load(response)
+        except urllib.error.HTTPError as exc:
+            try:
+                result = json.load(exc)
+            except ValueError:
+                result = {"status": "error", "error": f"HTTP {exc.code}"}
+            print(json.dumps(result, indent=2), file=sys.stderr)
+            return 1
+        if args.output_dir:
+            args.output_dir.mkdir(parents=True, exist_ok=False)
+            for filename in ("workflow_history.jsonl", "coordination_audit.jsonl"):
+                (args.output_dir / filename).write_text(
+                    "".join(
+                        json.dumps(item, ensure_ascii=True) + "\n"
+                        for item in result[filename]
+                    ),
+                    encoding="utf-8",
+                )
+        print(json.dumps(result, indent=2))
+        return 0
+    except (OSError, ValueError, urllib.error.URLError):
+        print(
+            "Unable to read input, write export, or contact the server; check paths, URL and server logs.",
+            file=sys.stderr,
+        )
         return 1
-    print(json.dumps({k: v for k, v in record.items() if not k.startswith("_")}, indent=2))
-    return 0
 
 
 if __name__ == "__main__":
