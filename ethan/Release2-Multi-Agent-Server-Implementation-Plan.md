@@ -572,3 +572,17 @@ Moved the three automated test modules into
 that directory. Runtime modules, the opt-in live evaluator and saved synthetic
 evidence remain distinct from pytest tests. All 64 tests pass after relocation.
 Changes remain local and uncommitted pending user review.
+
+### Separating captured evidence from implementation - 18 October 2026
+
+Preserved all 34 captured evidence files unchanged on `ethan/MultiAgentEvidence`,
+branched from `main` for an independent evidence-only PR. Verified its evidence
+tree matches the original implementation branch before removing those files
+from the implementation working tree. Server code, automated tests, evaluation
+tooling and contract/handoff documentation remain in the implementation PR.
+Updated evidence links to the companion branch; links require branch publication.
+
+The evidence branch has a local commit. Remote publication was blocked by
+Git/CLI credentials, so the user will push that branch and create its PR.
+Implementation removals and documentation changes remain unstaged for the user
+to commit and push separately. No history rewrite or force push is required.

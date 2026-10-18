@@ -148,7 +148,9 @@ Implementation modules and the terminal entry point remain in this directory.
 Automated tests live under `tests/`, with import setup in `tests/conftest.py`.
 `evaluate.py` is a separate opt-in live-model evaluation tool, not an automated
 test collected by pytest. Captured synthetic evaluation outputs are under
-`docs/release-2/shared/multi-agent-evidence/`, not beside implementation modules.
+`docs/release-2/shared/multi-agent-evidence/` on the separate
+`ethan/MultiAgentEvidence` branch for an evidence-only PR, not alongside the
+implementation changes. See the handoff for companion-branch links.
 
 For a real smoke run, check `ready=true`, run the example above, inspect all
 three role outputs and timings, record a human decision, and export history and

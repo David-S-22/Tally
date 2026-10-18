@@ -84,9 +84,11 @@ remain group work. No cloud bonus is claimed here.
 
 ## Captured validation
 
-The [synthetic evidence directory](multi-agent-evidence/) retains requests,
+The [synthetic evidence directory on the companion branch](https://github.com/David-S-22/Tally/tree/ethan/MultiAgentEvidence/docs/release-2/shared/multi-agent-evidence) retains requests,
 full stage snapshots, ordered audit events and machine-readable results.
 No application financial records or credentials are included.
+The files are separated from implementation PR #219 on `ethan/MultiAgentEvidence`
+for an evidence-only PR. The branch links become available after publication.
 
 The first run, `2026-10-18-local`, intentionally remains available even though
 its overall result failed. Four scenarios passed; with no supplied evidence,
@@ -106,7 +108,7 @@ the interpreter/platform contract; it is not native Windows Python 3.12
 installation evidence, a live-model Linux deployment, or a completed remote
 GitHub Actions run. Ruff checks and formatting also pass locally.
 
-The corrected run is [2026-10-18-verified/evaluation.json](multi-agent-evidence/2026-10-18-verified/evaluation.json).
+The corrected run is [2026-10-18-verified/evaluation.json](https://github.com/David-S-22/Tally/blob/ethan/MultiAgentEvidence/docs/release-2/shared/multi-agent-evidence/2026-10-18-verified/evaluation.json).
 All five automated scenario gates and the isolated real Reviewer probe passed.
 Planner/Worker used `qwen2.5:3b`, Reviewer used `llama3.1:8b`; completed workflows
 took approximately 43-165 seconds. Each scenario directory contains history/audit
@@ -121,7 +123,7 @@ exports taken before decisions, preserving the pending handoff.
 | Unsupported / anomalies label | Worker limitations or a non-approve verdict with risks |
 | Isolated Reviewer | Risks identify the injected AUD 999 and invented transaction identifier |
 
-[deployment.json](multi-agent-evidence/2026-10-18-verified/deployment.json)
+[deployment.json](https://github.com/David-S-22/Tally/blob/ethan/MultiAgentEvidence/docs/release-2/shared/multi-agent-evidence/2026-10-18-verified/deployment.json)
 records successful authenticated Docker-to-host health and saved-workflow
 retrieval, unauthenticated 401, actual Waitress restarts retaining pending and
 recorded decisions, terminal retrieval, all three automated decision paths
@@ -167,4 +169,5 @@ Automated tests are now separated under
 `ai-services/multi-agent-server/tests/`; shared pytest import setup lives in
 `tests/conftest.py`. CI and the README target that directory explicitly.
 Implementation/CLI modules remain outside the test directory, the opt-in live
-evaluator remains `evaluate.py`, and saved evidence remains under docs.
+evaluator remains `evaluate.py`, and saved evidence is reviewed separately on
+the companion evidence branch.
