@@ -25,6 +25,11 @@ ollama pull llama3.1:8b
 
 Ollama must be running before workflows can complete. The server can start
 without it, and saved workflows/decisions remain available during model outages.
+Requests use the official Ollama Python SDK and native chat/list APIs.
+An asynchronous SDK call runs within each synchronous worker request so its
+whole network operation can be cancelled at the remaining deadline. A bounded
+response stream retains the 256 KiB limit; schemas, source checks and one
+repair attempt remain server responsibilities.
 Run one server process per data directory using the provided entry point.
 Waitress serves HTTP on Windows and Linux; do not use a Flask debug reloader or
 multiple WSGI workers. Startup converts interrupted runs into failed,
@@ -131,13 +136,19 @@ There is no automatic expiry.
 
 ```powershell
 py -3 -m pip install pytest
-py -3 -m pytest ai-services\multi-agent-server -q
+py -3 -m pytest ai-services\multi-agent-server\tests -q
 ```
 
 Automated tests inject fake provider responses and require no live AI/MCP/RAG
 services. The dedicated shared-server CI runs them independently of feature
 workflows. They do not replace each student's required two backend endpoint
 tests or local pre-commit scans.
+
+Implementation modules and the terminal entry point remain in this directory.
+Automated tests live under `tests/`, with import setup in `tests/conftest.py`.
+`evaluate.py` is a separate opt-in live-model evaluation tool, not an automated
+test collected by pytest. Captured synthetic evaluation outputs are under
+`docs/release-2/shared/multi-agent-evidence/`, not beside implementation modules.
 
 For a real smoke run, check `ready=true`, run the example above, inspect all
 three role outputs and timings, record a human decision, and export history and
@@ -180,3 +191,8 @@ cloud infrastructure, or bonus claim is included. The required cloud profile
 keeps Multi-Agent disabled. A future bonus deployment needs reachable inference,
 TLS, authenticated/private networking, protected durable data and secrets,
 deployment automation, and working application evidence.
+`host.docker.internal` is a local Docker Desktop access path, not an Azure
+service address. No cloud multi-agent URL or VM is configured by this PR.
+Cloud enablement belongs in a separate deployment change with a reachable
+service URL and appropriate networking; a dedicated or shared VM is an
+option, not a requirement of the local baseline.

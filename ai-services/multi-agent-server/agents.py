@@ -1,11 +1,12 @@
+import asyncio
 import hashlib
-import http.client
 import json
 import logging
 import time
 from copy import deepcopy
-from urllib.parse import urlsplit
 
+import httpx
+import ollama
 from contracts import ROLE_SCHEMAS, WorkflowError, validate
 
 logger = logging.getLogger(__name__)
@@ -18,101 +19,87 @@ class AgentError(Exception):
         self.status = status
 
 
+class BoundedResponseStream(httpx.AsyncByteStream):
+    def __init__(self, stream):
+        self.stream = stream
+
+    async def __aiter__(self):
+        size = 0
+        async for chunk in self.stream:
+            size += len(chunk)
+            if size > 262144:
+                raise AgentError("invalid_model_output", "Model response exceeds limit")
+            yield chunk
+
+    async def aclose(self):
+        await self.stream.aclose()
+
+
 class Ollama:
     def __init__(self, settings):
         self.settings = settings
 
-    def request(self, method, path, body, deadline):
-        origin = urlsplit(self.settings.ollama_url)
+    async def _bound_response(self, response):
+        if response.is_stream_consumed:
+            if len(response.content) > 262144:
+                raise AgentError("invalid_model_output", "Model response exceeds limit")
+        else:
+            response.stream = BoundedResponseStream(response.stream)
+
+    async def _request(self, operation, deadline, **kwargs):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise AgentError("model_timeout", "Model deadline exceeded", "timeout")
-        connection_type = (
-            http.client.HTTPSConnection
-            if origin.scheme == "https"
-            else http.client.HTTPConnection
+        client = ollama.AsyncClient(
+            host=self.settings.ollama_url,
+            timeout=remaining,
+            follow_redirects=False,
+            headers={"Accept-Encoding": "identity"},
+            event_hooks={"response": [self._bound_response]},
         )
-        connection = connection_type(origin.hostname, origin.port, timeout=remaining)
         try:
-            connection.request(
-                method,
-                path,
-                body=None if body is None else json.dumps(body),
-                headers={"Content-Type": "application/json"},
-            )
-            self._budget(connection, deadline)
-            response = connection.getresponse()
-            chunks = []
-            size = 0
-            while True:
-                self._budget(connection, deadline)
-                chunk = response.read1(8192)
-                if not chunk:
-                    break
-                size += len(chunk)
-                if size > 262144:
-                    raise AgentError(
-                        "invalid_model_output", "Model response exceeds limit"
-                    )
-                chunks.append(chunk)
-            if response.status != 200:
-                logger.error("Ollama request failed http=%s", response.status)
-                raise AgentError(
-                    "model_unavailable", "Model provider rejected the request"
-                )
-            try:
-                return json.loads(b"".join(chunks))
-            except (ValueError, UnicodeDecodeError):
-                raise AgentError(
-                    "invalid_model_output", "Model provider returned invalid JSON"
-                ) from None
-        except (TimeoutError, OSError, http.client.HTTPException) as exc:
-            logger.error("Ollama transport failure kind=%s", type(exc).__name__)
-            if isinstance(exc, TimeoutError):
-                raise AgentError(
-                    "model_timeout", "Model deadline exceeded", "timeout"
-                ) from None
+            async with asyncio.timeout(remaining):
+                if operation == "chat":
+                    return await client.chat(**kwargs)
+                return await client.list()
+        except (TimeoutError, httpx.TimeoutException):
+            raise AgentError(
+                "model_timeout", "Model deadline exceeded", "timeout"
+            ) from None
+        except (ollama.ResponseError, httpx.HTTPError, ConnectionError, OSError) as exc:
+            logger.error("Ollama SDK failure kind=%s", type(exc).__name__)
             raise AgentError(
                 "model_unavailable", "Model provider is unavailable"
             ) from None
+        except ValueError:
+            raise AgentError(
+                "invalid_model_output", "Model provider returned invalid JSON"
+            ) from None
         finally:
-            connection.close()
-
-    @staticmethod
-    def _budget(connection, deadline):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise AgentError("model_timeout", "Model deadline exceeded", "timeout")
-        if connection.sock is not None:
-            connection.sock.settimeout(remaining)
+            await client.close()
 
     def generate(self, role, messages, schema, deadline):
-        response = self.request(
-            "POST",
-            "/api/chat",
-            {
-                "model": self.settings.models[role],
-                "messages": messages,
-                "format": schema,
-                "stream": False,
-                "options": {"temperature": 0, "num_predict": 2048, "num_ctx": 8192},
-            },
-            deadline,
+        response = asyncio.run(
+            self._request(
+                "chat",
+                deadline,
+                model=self.settings.models[role],
+                messages=messages,
+                format=schema,
+                stream=False,
+                options={"temperature": 0, "num_predict": 2048, "num_ctx": 8192},
+            )
         )
-        if (
-            not isinstance(response, dict)
-            or not isinstance(response.get("message"), dict)
-            or not isinstance(response["message"].get("content"), str)
-        ):
+        if not response.message or not isinstance(response.message.content, str):
             raise AgentError(
                 "invalid_model_output", "Model provider returned an invalid envelope"
             )
-        return response["message"]["content"]
+        return response.message.content
 
     def health(self):
         try:
-            result = self.request("GET", "/api/tags", None, time.monotonic() + 2)
-            names = {model["name"] for model in result["models"]}
+            result = asyncio.run(self._request("list", time.monotonic() + 2))
+            names = {model.model for model in result.models}
             missing = sorted(set(self.settings.models.values()) - names)
             return {"ollama": "up", "ready": not missing, "missing_models": missing}
         except (AgentError, KeyError, TypeError):

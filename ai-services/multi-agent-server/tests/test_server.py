@@ -1,10 +1,7 @@
-"""Contract tests for the Multi-Agent Server. Run: python -m pytest ai-services/multi-agent-server -q"""
+"""Contract tests for the shared Multi-Agent Server."""
 
 import json
-import os
-import sys
 
-sys.path.append(os.path.dirname(__file__))
 import pytest
 from agents import Agents
 from server import create_app

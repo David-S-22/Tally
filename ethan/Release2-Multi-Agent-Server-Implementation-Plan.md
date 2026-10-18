@@ -552,3 +552,23 @@ The shared server, its dedicated CI/tests, prompts, generic `bills` feature
 identifier and synthetic evaluation evidence remain. This cleanup is an
 unstaged local change; it does not rewrite committed history or update the
 remote PR until the user explicitly commits and pushes it.
+
+### PR comments 1, 3 and 4 - 18 October 2026
+
+Confirmed the Azure Docker-host URL is already absent after the Bills cleanup.
+Documented that optional cloud hosting requires a separate deployment change
+and real service URL; no VM or cloud enablement was added.
+Removed the unused log-directory placeholder without deleting runtime evidence.
+Replaced custom HTTP transport with the official Ollama SDK while retaining
+whole-operation cancellation deadlines, bounded response reads, native schema
+formatting/options and post-generation validation. Dedicated shared CI and
+Waitress remain unchanged, as comments 2 and 5 were not requested changes.
+
+### Implementation/test separation - 18 October 2026
+
+Moved the three automated test modules into
+`ai-services/multi-agent-server/tests/` and centralised their import setup in
+`tests/conftest.py`. Updated dedicated CI and README test commands to target
+that directory. Runtime modules, the opt-in live evaluator and saved synthetic
+evidence remain distinct from pytest tests. All 64 tests pass after relocation.
+Changes remain local and uncommitted pending user review.

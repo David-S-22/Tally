@@ -1,9 +1,12 @@
+import asyncio
 import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
+import httpx
+import ollama
 import pytest
 from agents import AgentError, Agents, Ollama
 from contracts import FEATURES, ROLE_SCHEMAS
@@ -304,16 +307,108 @@ def test_legacy_logs_require_explicit_migration(tmp_path):
 def test_deadline_and_model_transport_errors():
     provider = Ollama(Settings())
     with pytest.raises(AgentError) as error:
-        provider.request("GET", "/api/tags", None, time.monotonic() - 1)
+        asyncio.run(provider._request("list", time.monotonic() - 1))
     assert error.value.status == "timeout"
     with (
         patch(
-            "http.client.HTTPConnection.request",
+            "ollama.AsyncClient.list",
             side_effect=OSError("private diagnostics"),
         ),
         pytest.raises(AgentError, match="unavailable"),
     ):
-        provider.request("GET", "/api/tags", None, time.monotonic() + 1)
+        asyncio.run(provider._request("list", time.monotonic() + 1))
+
+
+def test_sdk_uses_native_api_schema_options_and_bounds_responses(monkeypatch):
+    real_client = ollama.AsyncClient
+    requests = []
+
+    def factory(**kwargs):
+        def respond(request):
+            requests.append(request)
+            return httpx.Response(
+                200, json={"message": {"role": "assistant", "content": "{}"}}
+            )
+
+        return real_client(**kwargs, transport=httpx.MockTransport(respond))
+
+    monkeypatch.setattr(ollama, "AsyncClient", factory)
+    provider = Ollama(Settings())
+    assert (
+        provider.generate("planner", [], ROLE_SCHEMAS["planner"], time.monotonic() + 2)
+        == "{}"
+    )
+    body = json.loads(requests[0].content)
+    assert requests[0].url.path == "/api/chat"
+    assert body["format"] == ROLE_SCHEMAS["planner"]
+    assert body["options"]["num_ctx"] == 8192 and body["stream"] is False
+
+    def oversized(**kwargs):
+        return real_client(
+            **kwargs,
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, content=b"x" * 262145)
+            ),
+        )
+
+    monkeypatch.setattr(ollama, "AsyncClient", oversized)
+    with pytest.raises(AgentError, match="exceeds limit"):
+        provider.generate("planner", [], {}, time.monotonic() + 2)
+
+
+def test_sdk_deadline_cancels_slow_response_and_closes_client(monkeypatch):
+    real_client = ollama.AsyncClient
+    clients = []
+
+    def factory(**kwargs):
+        async def respond(request):
+            await asyncio.sleep(1)
+            return httpx.Response(200, json={"models": []})
+
+        client = real_client(**kwargs, transport=httpx.MockTransport(respond))
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(ollama, "AsyncClient", factory)
+    with pytest.raises(AgentError) as error:
+        asyncio.run(Ollama(Settings())._request("list", time.monotonic() + 0.02))
+    assert error.value.status == "timeout"
+    assert clients[0]._client.is_closed
+
+
+@pytest.mark.parametrize("failure", ["oversize", "slow"])
+def test_sdk_bounds_streamed_body_and_closes_it(monkeypatch, failure):
+    real_client = ollama.AsyncClient
+
+    class Body(httpx.AsyncByteStream):
+        closed = False
+
+        async def __aiter__(self):
+            yield b" " * 131072
+            if failure == "slow":
+                await asyncio.sleep(1)
+            yield b" " * 131073
+
+        async def aclose(self):
+            self.closed = True
+
+    body = Body()
+    monkeypatch.setattr(
+        ollama,
+        "AsyncClient",
+        lambda **kwargs: real_client(
+            **kwargs,
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, stream=body)
+            ),
+        ),
+    )
+    with pytest.raises(AgentError) as error:
+        asyncio.run(Ollama(Settings())._request("list", time.monotonic() + 0.05))
+    assert error.value.code == (
+        "model_timeout" if failure == "slow" else "invalid_model_output"
+    )
+    assert body.closed
 
 
 def test_terminal_calls_http_and_includes_reason(monkeypatch, capsys):

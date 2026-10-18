@@ -142,3 +142,29 @@ ephemeral Python containers were test runners/callers, not a deployed server.
 This establishes compatibility, not compliance with the brief's fully
 non-containerised AI topology. All temporary host servers and test containers
 were stopped; existing application containers were left untouched.
+
+## PR review follow-up
+
+The Azure `host.docker.internal` setting is absent from the current branch;
+Bicep and Compose match the baseline without a multi-agent deployment.
+That hostname is local-only, not an Azure endpoint. Optional cloud hosting
+requires a separate deployment change, a real reachable URL, protected
+networking/TLS, authentication and persistent state. A VM is one option;
+the required cloud baseline keeps multi-agent disabled.
+
+Removed `logs/.gitkeep`: startup creates the configured data directory itself.
+Existing runtime data was not deleted.
+
+Ollama transport now uses the official Python SDK (`AsyncClient.chat` and
+`list`) rather than custom HTTP request/envelope handling. A small response
+stream wrapper preserves the size cap, and an asynchronous timeout bounds the
+whole operation, including response reads. Existing role orchestration,
+generation options, schema/source validation and failure semantics remain.
+The earlier saved evaluation bundles describe the pre-SDK implementation;
+they have not been rewritten to imply that they were rerun with the SDK.
+
+Automated tests are now separated under
+`ai-services/multi-agent-server/tests/`; shared pytest import setup lives in
+`tests/conftest.py`. CI and the README target that directory explicitly.
+Implementation/CLI modules remain outside the test directory, the opt-in live
+evaluator remains `evaluate.py`, and saved evidence remains under docs.
