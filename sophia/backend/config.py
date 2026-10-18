@@ -56,4 +56,5 @@ GROUNDED_TIMEOUT_SECONDS = float(os.environ.get("GROUNDED_TIMEOUT_SECONDS", "20"
 # Release 2: the shared Multi-Agent Server (Planner -> Worker -> Reviewer -> Human Review); off unless switched on.
 MULTI_AGENT_ENABLED = _flag("MULTI_AGENT_ENABLED", False)
 MULTI_AGENT_SERVER_URL = os.environ.get("MULTI_AGENT_SERVER_URL", "http://host.docker.internal:5010").rstrip("/")
-MULTI_AGENT_TIMEOUT_SECONDS = float(os.environ.get("MULTI_AGENT_TIMEOUT_SECONDS", "90"))
+# Covers all three agent steps (3 x AGENT_STEP_TIMEOUT_SECONDS, 180 each by default) plus overhead; see the ADR.
+MULTI_AGENT_TIMEOUT_SECONDS = float(os.environ.get("MULTI_AGENT_TIMEOUT_SECONDS", "600"))

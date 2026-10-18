@@ -54,6 +54,6 @@ python ai-services/multi-agent-server/workflow_runner.py --decide <workflow_id> 
 
 ## What the real implementation adds
 
-1. In `agents.py`: Ollama calls (planner and worker on `qwen2.5:0.5b`, reviewer on `llama3.1:8b`) using prompts from `prompts/multi_agent/`, `AGENT_STEP_TIMEOUT_SECONDS`, and `"status": "timeout"` results. The coordinator already records an `error` result and continues to human review if an agent raises.
+1. In `agents.py`: Ollama calls (planner and worker on `qwen2.5:0.5b`, reviewer on `llama3.1:8b`) through `OLLAMA_BASE_URL` (default `http://localhost:11434/v1`, the OpenAI-compatible endpoint the shared loop uses) using prompts from `prompts/multi_agent/`, `AGENT_STEP_TIMEOUT_SECONDS` (default 180 per step; raise it for large models on CPU-only hosts) and `"status": "timeout"` results. The coordinator already records an `error` result and continues to human review if an agent raises.
 2. In `server.py` `/health`: a real Ollama probe instead of `"stub"`.
 3. Optional, per the ADR's open points: `options.use_mcp`.
