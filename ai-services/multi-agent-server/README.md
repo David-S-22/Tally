@@ -140,9 +140,8 @@ py -3 -m pytest ai-services\multi-agent-server\tests -q
 ```
 
 Automated tests inject fake provider responses and require no live AI/MCP/RAG
-services. The dedicated shared-server CI runs them independently of feature
-workflows. They do not replace each student's required two backend endpoint
-tests or local pre-commit scans.
+services. Run them locally when changing the shared server. They do not replace
+each student's required two backend endpoint tests or local pre-commit scans.
 
 Implementation modules and the terminal entry point remain in this directory.
 Automated tests live under `tests/`, with import setup in `tests/conftest.py`.

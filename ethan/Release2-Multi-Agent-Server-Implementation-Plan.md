@@ -462,9 +462,9 @@ The initial non-cloud implementation now includes:
 - HTTP-based terminal access, strict request/decision validation, loopback
   defaults, non-loopback bearer-token requirements, workload admission and
   liveness/readiness reporting.
-- Independent shared-server CI and automated contract/runtime tests using
-  fake model responses, plus a successful real three-role Ollama run through
-  HTTP with a terminal-recorded correction and evidence export.
+- Automated contract/runtime tests using fake model responses, plus a
+  successful real three-role Ollama run through HTTP with a terminal-recorded
+  correction and evidence export.
 - Setup, configuration, security limitations and feature-owner migration
   guidance in the shared server README. No feature code, Compose topology,
   cloud infrastructure or feature workflows were modified.
@@ -486,7 +486,7 @@ Outstanding group/operational gates remain:
 - Agentic-loop Multi-Agent Review implementation and report/showcase evidence
   produced by that separate workstream.
 - Required pre-commit security tooling/reports and per-student endpoint CI
-  evidence; shared-server CI is not a substitute.
+  evidence.
 - Baseline cloud validation and any optional cloud bonus work, both outside
   this non-cloud implementation.
 
@@ -548,7 +548,7 @@ health/configuration/errors, README section and related Compose, Bicep and
 Sophia-CI additions. Those paths now match `main`. Existing Bills functionality
 is preserved; future integration belongs to its feature owner.
 
-The shared server, its dedicated CI/tests, prompts, generic `bills` feature
+The shared server, its automated tests, prompts, generic `bills` feature
 identifier and synthetic evaluation evidence remain. This cleanup is an
 unstaged local change; it does not rewrite committed history or update the
 remote PR until the user explicitly commits and pushes it.
@@ -561,8 +561,9 @@ and real service URL; no VM or cloud enablement was added.
 Removed the unused log-directory placeholder without deleting runtime evidence.
 Replaced custom HTTP transport with the official Ollama SDK while retaining
 whole-operation cancellation deadlines, bounded response reads, native schema
-formatting/options and post-generation validation. Dedicated shared CI and
-Waitress remain unchanged, as comments 2 and 5 were not requested changes.
+formatting/options and post-generation validation. The dedicated shared-server
+CI and Waitress remain unchanged at this point; comments 2 and 5 were not
+requested changes.
 
 ### Implementation/test separation - 18 October 2026
 
@@ -572,6 +573,9 @@ Moved the three automated test modules into
 that directory. Runtime modules, the opt-in live evaluator and saved synthetic
 evidence remain distinct from pytest tests. All 64 tests pass after relocation.
 Changes remain local and uncommitted pending user review.
+
+The dedicated shared-server CI was subsequently removed at the user's request
+in response to PR review feedback. Tests remain available to run locally.
 
 ### Separating captured evidence from implementation - 18 October 2026
 
