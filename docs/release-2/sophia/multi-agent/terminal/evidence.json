@@ -1,0 +1,35 @@
+[
+  {
+    "source": "bills-db:bill:6",
+    "summary": "Bill 6 GymCo (GymCo): $24.99 monthly, paid by direct_debit, next 2026-10-15",
+    "data": {
+      "id": 6
+    }
+  },
+  {
+    "source": "mcp:compare_bill_with_bank_charges",
+    "summary": "15 Jul GymCo $24.99; 8 Jul GymCo $24.99",
+    "data": {
+      "bill_id": 6,
+      "rows": [
+        "15 Jul GymCo $24.99",
+        "8 Jul GymCo $24.99"
+      ],
+      "tools": [
+        "compare_bill_with_bank_charges",
+        "get_transactions_with_confirmed_anomalies"
+      ]
+    }
+  },
+  {
+    "source": "rag:billing",
+    "summary": "billing_overview.md: Full payment for utility bills is due within 14 calendar days from the invoice issue date. billing_overview.md: Accounts with payments overdue beyond 30 days incur a 5% late penalty fee. billing_overview.md: Direct debit and major credit cards are accepted for automatic settlements.",
+    "data": {
+      "rows": [
+        "billing_overview.md: Full payment for utility bills is due within 14 calendar days from the invoice issue date.",
+        "billing_overview.md: Accounts with payments overdue beyond 30 days incur a 5% late penalty fee.",
+        "billing_overview.md: Direct debit and major credit cards are accepted for automatic settlements."
+      ]
+    }
+  }
+]

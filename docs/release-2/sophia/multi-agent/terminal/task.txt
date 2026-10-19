@@ -1,0 +1,7 @@
+Draft a dispute letter for bill 6 (GymCo, GymCo, $24.99, monthly). Reason for the dispute: Charged after I cancelled.
+
+Planner: list the facts the letter must state (the bill, the charge or charges being disputed with their dates and amounts, what the user asks for) and name which supplied evidence source proves each one. If the evidence does not show the charge the reason refers to, say so in missing_information instead of planning around it.
+
+Worker: write the letter the user will send to GymCo. Plain English, 90 to 180 words, addressed "Dear GymCo", one paragraph per fact, ending with the request (a refund or a corrected charge) and the user's name left as [Your name]. Cite dates and amounts only from the bank statement facts in the evidence (source ids starting with 'mcp:'). Payments the user recorded in Tally are their own records, never bank charges. Never invent account numbers, reference numbers, phone numbers, emails, dates or amounts. Never include legal threats. Never claim to send anything: this is a draft the user sends themselves. Output the letter as plain text in `output`; set `structured` to null.
+
+Reviewer: check every date, amount and claim in the letter against the evidence. Flag as a risk any sentence the evidence does not support, any promised timeframe, and any contact detail. Verdict approve only when every claim is supported.
