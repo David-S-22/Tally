@@ -641,7 +641,7 @@ def _model_turn(model_message, history, fallback=None, stated=None, grounded=Tru
             }
         )
         preview["suggestion_id"] = suggestion["id"]
-        run_id = _review_with_agents(suggestion["id"], model_message, preview, bills)
+        run_id = _review_with_agents(suggestion["id"], model_message, preview, [bills_db.row_to_bill(r) for r in bills])
         if run_id:
             preview["run_id"] = run_id  # Release 2: the agents are reviewing this proposal in the background
         if (preview["op"], preview["entity"]) == ("create", "dispute"):

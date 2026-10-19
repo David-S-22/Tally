@@ -246,3 +246,15 @@ def test_chat_hook_starts_a_run_for_a_fresh_proposal_and_never_breaks_the_reply(
     assert started[0][0] == 7
     monkeypatch.setattr(multi_agent_service, "start_chat_suggestion", lambda *a: 1 / 0)
     assert chat_service._review_with_agents(7, "cancel spotify", preview, []) is None
+
+
+def test_a_chat_proposal_through_ui_chat_starts_the_agents_with_the_bills_as_evidence(world, monkeypatch):
+    # The real path: /ui/chat hands the database rows on, not Bill objects.
+    world.model.structured = {"op": "update", "entity": "bill", "id": 3, "fields": {"end_date": "2026-09-16"}}
+    proposal = {"op": "update", "entity": "bill", "id": 3, "fields": {"end_date": "2026-09-16"}, "question": "none", "say": "I've suggested ending Spotify after 16 September."}
+    monkeypatch.setattr("sophia.backend.ai.guard.chat", lambda model, messages, timeout=None: {"message": {"content": json.dumps(proposal)}})
+    assert world.client.post("/ui/chat", data={"message": "I cancelled Spotify from 16 September"}).status_code == 200
+    started = [body for method, path, body in world.posted if (method, path) == ("POST", "/workflow")]
+    assert len(started) == 1
+    assert any(e["source"] == "bills-db:bill:3" and "Spotify" in e["summary"] for e in started[0]["evidence"])
+    assert 'id="agent-review-chat_suggestion-' in _text(world.client.get("/ui/suggestions"))
