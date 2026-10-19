@@ -8,11 +8,12 @@ and Ollama warm. It sends the real Bills task template with a fixed evidence set
 are what the dispute panel will see. Set ``MULTI_AGENT_SERVER_URL`` / ``MULTI_AGENT_TOKEN`` as the
 backend would. The decision is always Reject, so nothing is stored anywhere but the server's audit.
 
-Model profiles are a server-side choice (shared); the one that matters for the 20-second target:
+Model profiles are a server-side choice (shared). The demo profile swaps only the reviewer:
 
-    MULTI_AGENT_PLANNER_MODEL=qwen2.5:0.5b MULTI_AGENT_WORKER_MODEL=qwen2.5:3b MULTI_AGENT_REVIEWER_MODEL=qwen2.5:3b
+    MULTI_AGENT_REVIEWER_MODEL=qwen2.5:3b
 
-against the default qwen2.5:3b / qwen2.5:3b / llama3.1:8b (43-165 s in Ethan's verified runs).
+On the demo laptop (6 GB VRAM) that measured 25.6 s mean against 49.0 s for the default
+qwen2.5:3b / qwen2.5:3b / llama3.1:8b; the numbers and the trade-off are in sophia/README.md.
 """
 import argparse
 import os
@@ -24,6 +25,9 @@ from datetime import date
 os.environ.setdefault("MULTI_AGENT_ENABLED", "true")
 os.environ.setdefault("MULTI_AGENT_SERVER_URL", "http://127.0.0.1:5010")
 
+import requests  # noqa: E402
+
+from sophia.backend import config  # noqa: E402
 from sophia.backend.ai import agent_tasks  # noqa: E402
 from sophia.backend.clients import multi_agent  # noqa: E402
 from sophia.backend.engine import Bill  # noqa: E402
@@ -52,7 +56,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--runs", type=int, default=1)
     args = parser.parse_args(argv)
-    health = multi_agent._call("GET", "/health", None, "health")
+    # _call accepts only workflow records; /health has its own shape.
+    health = requests.get(config.MULTI_AGENT_SERVER_URL + "/health", headers=multi_agent._headers(), timeout=10).json()
     print(f"server: ollama={health.get('ollama')} ready={health.get('ready')} models={health.get('models')} missing={health.get('missing_models')}")
     totals = []
     for i in range(args.runs):
