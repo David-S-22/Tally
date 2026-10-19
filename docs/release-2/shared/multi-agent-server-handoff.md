@@ -8,9 +8,12 @@ integration and its configuration have been removed from this branch. Use the
 
 ## Deployment and caller requirements
 
-Run `server.py` as one host Python process with Waitress and a persistent,
-protected `MULTI_AGENT_LOG_DIR`. Keep AI/MCP/RAG host-run as required by the
-brief. The existing Compose Ollama service is a separate topology issue:
+Run `server.py` as one host Python process using Flask's built-in threaded
+development server and a persistent, protected `MULTI_AGENT_LOG_DIR`. Debug
+mode and the reloader are disabled to avoid extra processes against the data
+directory. This is suitable for a small local project/demo, not production.
+Keep AI/MCP/RAG host-run as required by the brief. The existing Compose Ollama
+service is a separate topology issue:
 successful inference against it is not proof of the required non-containerised
 whole-application deployment.
 
@@ -125,7 +128,7 @@ exports taken before decisions, preserving the pending handoff.
 
 [deployment.json](https://github.com/David-S-22/Tally/blob/ethan/MultiAgentEvidence/docs/release-2/shared/multi-agent-evidence/2026-10-18-verified/deployment.json)
 records successful authenticated Docker-to-host health and saved-workflow
-retrieval, unauthenticated 401, actual Waitress restarts retaining pending and
+retrieval, unauthenticated 401, actual server restarts retaining pending and
 recorded decisions, terminal retrieval, all three automated decision paths
 and duplicate-decision 409. The `text-decision`, `structured-decision` and
 `missing-decision` directories contain the later decision snapshots. Their
@@ -139,7 +142,9 @@ explanation; the Reviewer flagged that. Some other Reviewer objections were
 subjective or overly strict. Human inspection remains necessary even when
 automated checks pass, and a Reviewer warning is not itself proof of a defect.
 
-The host server used the existing local Ollama container for these runs. The
+The host server used Waitress for these historical captured runs; the current
+entry point uses Flask's built-in threaded development server. The host server
+used the existing local Ollama container for these runs. The
 ephemeral Python containers were test runners/callers, not a deployed server.
 This establishes compatibility, not compliance with the brief's fully
 non-containerised AI topology. All temporary host servers and test containers

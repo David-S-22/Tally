@@ -514,7 +514,7 @@ Completed within the shared-server-only scope:
 - Verified 60 tests on Windows Python 3.14 and Linux Python 3.12 using an
   ephemeral container and read-only code mount, plus local Ruff checks.
   This is not a native Windows Python 3.12 setup or completed remote CI run.
-- Verified host-run Waitress, authenticated Docker-to-host health/retrieval,
+- Verified host-run server, authenticated Docker-to-host health/retrieval,
   unauthenticated 401, restart retention of pending and recorded decisions,
   terminal access, Accept/Partially Accept/Reject mechanics and repeat-decision
   409. Decisions are explicitly labelled automated synthetic exercises,
@@ -576,6 +576,10 @@ Changes remain local and uncommitted pending user review.
 
 The dedicated shared-server CI was subsequently removed at the user's request
 in response to PR review feedback. Tests remain available to run locally.
+Waitress was initially retained after review, then removed at the user's
+request: the entry point now uses Flask's built-in threaded development server
+with debug/reloader disabled and no separate WSGI server dependency. This is
+for the small local project/demo, not production deployment.
 
 ### Separating captured evidence from implementation - 18 October 2026
 

@@ -31,9 +31,11 @@ whole network operation can be cancelled at the remaining deadline. A bounded
 response stream retains the 256 KiB limit; schemas, source checks and one
 repair attempt remain server responsibilities.
 Run one server process per data directory using the provided entry point.
-Waitress serves HTTP on Windows and Linux; do not use a Flask debug reloader or
-multiple WSGI workers. Startup converts interrupted runs into failed,
-reject-only records rather than silently rerunning model work.
+The entry point uses Flask's built-in threaded development server on Windows
+and Linux, with debug mode and the reloader disabled. This is appropriate for
+the small local project/demo, not production deployment. Startup converts
+interrupted runs into failed, reject-only records rather than silently
+rerunning model work.
 
 The default is `http://127.0.0.1:5010`. In another terminal:
 

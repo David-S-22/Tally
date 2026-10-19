@@ -121,16 +121,15 @@ def create_app(log_dir=None, settings=None, agent_runner=None):
 
 
 if __name__ == "__main__":
-    from waitress import serve
-
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
     )
     configuration = Settings.from_env()
     with InstanceLock(configuration.data_dir):
-        serve(
-            create_app(settings=configuration),
+        create_app(settings=configuration).run(
             host=configuration.host,
             port=configuration.port,
-            threads=4,
+            debug=False,
+            threaded=True,
+            use_reloader=False,
         )
