@@ -188,6 +188,10 @@ def test_ui_block_shows_the_draft_and_the_decision_saves_a_version(world):
     assert 'hx-trigger="every 2s"' not in html
     assert "Dear Spotify AU" in html and "Reviewer: approve" in html
     assert 'value="Accept"' in html and 'value="Partially Accept"' in html and 'value="Reject"' in html
+    # The editable draft sits outside the <form>; it must join it, or the edit never posts.
+    form_id = f"agent-decision-{run_id}"
+    assert f'<form class="agent-decision" id="{form_id}"' in html
+    assert f'name="corrected_output" form="{form_id}"' in html
     wid = multi_agent_service.run_status(run_id)["workflow_id"]
     before = len(bills_db.list_dispute_drafts(1))
     response = world.client.post(f"/ui/disputes/1/workflow/{wid}/decision", data={"decision": "Partially Accept", "corrected_output": "Dear Spotify, trimmed.", "reason": "shorter"})

@@ -7,6 +7,8 @@
 {% set poll_url = "/bills-backend/ui/workflow-runs/" ~ run.run_id ~ "?kind=" ~ run.kind ~ "&subject_id=" ~ run.subject_id %}
 {% set decide_url = ("/bills-backend/ui/disputes/" ~ run.subject_id ~ "/workflow/" ~ (run.workflow_id or "") ~ "/decision") if run.kind == "dispute_letter" else ("/bills-backend/ui/suggestions/" ~ run.subject_id ~ "/workflow/" ~ (run.workflow_id or "") ~ "/decision") %}
 {% set target = "#dispute-panel" if run.kind == "dispute_letter" else "#suggestions-panel" %}
+{# The editable draft sits above the form, so it joins it through form="…". #}
+{% set form_id = "agent-decision-" ~ run.run_id %}
 <div class="agent-review agent-review-{{ run.state }}" id="agent-review-{{ run.kind }}-{{ run.subject_id }}" data-run-id="{{ run.run_id }}"
      {% if run.state == "running" %}hx-get="{{ poll_url }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   <p class="agent-review-heading">Multi-agent review
@@ -33,11 +35,11 @@
       <p class="suggestion-error">{{ s.failed_agent or "An agent" }} failed, so there is no draft to accept — only Reject is available.</p>
     {% else %}
       {% if run.kind == "dispute_letter" %}
-        <textarea class="letter agent-draft" name="corrected_output" aria-label="Drafted letter — edit it to partially accept">{{ s.output }}</textarea>
+        <textarea class="letter agent-draft" name="corrected_output" form="{{ form_id }}" aria-label="Drafted letter — edit it to partially accept">{{ s.output }}</textarea>
       {% else %}
         {% if s.structured %}
           <p class="agent-proposal">{{ s.output }}</p>
-          <textarea class="agent-draft agent-draft-json" name="corrected_output" aria-label="Proposed change as JSON — edit it to partially accept">{{ s.structured|tojson(indent=1) }}</textarea>
+          <textarea class="agent-draft agent-draft-json" name="corrected_output" form="{{ form_id }}" aria-label="Proposed change as JSON — edit it to partially accept">{{ s.structured|tojson(indent=1) }}</textarea>
         {% else %}
           <p class="agent-proposal">{{ s.output }}</p>
           <p class="agent-missing">No appliable change was proposed; reject it or tell Tally the missing details.</p>
@@ -57,7 +59,7 @@
     {% if s.decision %}
       <p class="agent-decided">Decided: <strong>{{ s.decision }}</strong>.</p>
     {% else %}
-      <form class="agent-decision" hx-post="{{ decide_url }}" hx-target="{{ target }}" hx-swap="outerHTML" hx-disabled-elt="find button" hx-indicator="find .working">
+      <form class="agent-decision" id="{{ form_id }}" hx-post="{{ decide_url }}" hx-target="{{ target }}" hx-swap="outerHTML" hx-disabled-elt="find button" hx-indicator="find .working">
         <input type="hidden" name="run_id" value="{{ run.run_id }}">
         <label class="agent-reason-label">Reason <span class="mut">(needed to edit, or to accept against the reviewer)</span>
           <input class="agent-reason" name="reason" placeholder="e.g. removed the refund timeframe the reviewer flagged">
