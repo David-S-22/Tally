@@ -114,3 +114,7 @@ def no_real_model_warm_up(monkeypatch):
     from sophia.backend.ai import ollama_client
 
     monkeypatch.setattr(ollama_client, "warm", lambda model: None)
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "extended: the adversarial chat-routing sweep; excluded in CI, run with -m extended before a release")

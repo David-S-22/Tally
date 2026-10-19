@@ -216,13 +216,18 @@ proposal until the user decides on it) and why each exists.
 ## Testing and evidence
 
 ```
-python -m pytest sophia/test -q --cov=sophia/backend --cov-report=term
+python -m pytest sophia/test -q -n auto -m "not extended"       # the essential set, what Sophia-CI runs (~14 s on 2 cores)
+python -m pytest sophia/test -q -m extended                     # the adversarial chat-routing sweep, before a release
+python -m pytest sophia/test -q --cov=sophia/backend --cov-report=term   # the coverage report, locally
 ```
 
-283 passed; coverage 91% across `sophia/backend` (1698 statements, 155 missed;
-measured 7 Sep 2026 on Python 3.13.2 at `aede425`). The same suite is green on
-Python 3.12 in Sophia-CI run 145, and the saved output is
-`docs/release-0/sophia/evidence/compose/pytest-283-passed.txt`.
+754 tests (538 essential + 216 extended), 19 Oct 2026. Release 2 moved the
+adversarial sweep in `test_chat_route_matrix.py` (every corpus phrasing × six
+model misreadings) behind the `extended` marker and took coverage out of CI:
+together they were two thirds of a 51 s CI test step, and CI is a gate, not a
+report. The faithful case for every phrasing still runs in CI. Coverage was
+91% across `sophia/backend` when last measured (7 Sep 2026, `aede425`); the
+saved output is `docs/release-0/sophia/evidence/compose/pytest-283-passed.txt`.
 
 Covers the engine (dates, projection, calendar, status, money), the database
 API (temp SQLite per test, seed row counts, CRUD round-trips, cascade
