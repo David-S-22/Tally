@@ -43,13 +43,30 @@ jobs:
       - name: Install dependencies
         run: pip install -r sophia/requirements.txt
       - name: Run tests
-        # Essential set only: the adversarial chat-routing sweep is `-m extended` (run it locally before a
-        # release). Coverage is a local report (`--cov=sophia/backend`), not a CI gate; it costs ~50% here.
+        # Core set only: sophia/test/ci_core.txt names the tests CI runs; everything else is marked
+        # `extended` (run `-m extended` locally before a release). Coverage is a local report
+        # (`--cov=sophia/backend`), not a CI gate; it costs ~50% here.
         run: python -m pytest sophia/test -q -n auto -m "not extended"
       - name: Check the committed bills corpus is fresh
         run: python -m sophia.rag.build_corpus --from-seed --check
       - name: Run corpus tests
         run: python -m pytest sophia/rag -q
+
+  agentic-loop:
+    name: Agentic loop tooling tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sophia/requirements.txt
+      - name: Install dependencies
+        run: pip install -r sophia/requirements.txt
+      - name: Run tests
+        run: python -m pytest sophia/agentic_loop/tests -q
 
   docker-health:
     name: Bills container health with AI-Mode, MCP and RAG disabled

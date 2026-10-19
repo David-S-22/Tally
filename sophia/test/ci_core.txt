@@ -1,0 +1,199 @@
+# The Bills tests Sophia-CI runs. conftest.py marks every other test `extended`,
+# so `-m "not extended"` is this list and `-m extended` is the rest (run both
+# before a release). One test per behaviour or route, plus one representative
+# case of each parametrized sweep. `file::test` keeps every case of a
+# parametrized test; `file::test[id]` keeps one. A line that stops matching a
+# test fails collection, so renaming a core test means renaming it here too.
+
+# --- engine: dates, projection, calendar, status ---------------------------------
+test_engine_dates.py::test_add_months_end_of_month_sequence
+test_engine_dates.py::test_add_months_leap_year_anchor
+test_engine_dates.py::test_add_cadence_weekly_and_fortnightly
+test_engine_dates.py::test_month_bounds
+test_engine_dates.py::test_no_wall_clock_calls_in_engine
+test_engine_projection.py::test_fortnightly_september_occurrences
+test_engine_projection.py::test_days_clamped_to_30_and_180
+test_engine_projection.py::test_timeline_window_is_half_open_and_includes_today
+test_engine_projection.py::test_end_date_before_window_gives_zero_occurrences
+test_engine_projection.py::test_tag_kind_actual_within_three_days_predicted_beyond
+test_engine_projection.py::test_project_never_emits_dates_before_created_at
+test_engine_projection.py::test_timeline_surfaces_an_unpaid_overdue_occurrence_at_the_top
+test_engine_calendar.py::test_fortnightly_extra_occurrence_in_september
+test_engine_calendar.py::test_spotify_ends_in_september_excluded_from_october
+test_engine_calendar.py::test_usual_range_from_last_six_payments
+test_engine_status.py::test_internet_overdue_then_paid
+test_engine_status.py::test_rent_paid_then_due_today_then_overdue
+test_engine_status.py::test_next_occurrence_for_31st_anchor_does_not_drift
+
+# --- money ----------------------------------------------------------------------
+test_money.py::test_format_actual
+test_money.py::test_format_estimate_range
+test_money.py::test_parse_dollars_to_cents[$15.00-1500]
+test_money.py::test_parse_dollars_to_cents[1,100.00-110000]
+test_money.py::test_parse_dollars_to_cents_is_exact_where_float_is_not
+test_money.py::test_parse_dollars_to_cents_rejects_non_amounts[abc]
+
+# --- database API and services --------------------------------------------------
+test_db_api.py::test_health
+test_db_api.py::test_seed_default_is_the_demo_offset_of_42_days
+test_db_api.py::test_bill_crud_round_trip
+test_db_api.py::test_payment_round_trip_and_bill_payments_listing
+test_db_api.py::test_dispute_and_draft_version_increment
+test_db_api.py::test_deleting_a_bill_cascades_to_payments_and_disputes
+test_service_validation.py::test_create_bill_rejects_bad_payloads[payload0-missing required fields]
+test_service_validation.py::test_cancel_bill_rejects_bad_end_dates[13/09/2026-end_date must be YYYY-MM-DD]
+test_service_validation.py::test_bill_writes_raise_not_found_for_unknown_ids[<lambda>0]
+test_service_validation.py::test_create_payment_rejects_bad_payloads[payload1-bill_id must be an integer]
+test_service_validation.py::test_update_payment_recomputes_owning_bill_status
+test_service_validation.py::test_normalise_maps_amount_dollars_onto_amount_cents
+test_service_validation.py::test_normalise_rejects_conflicting_aliases
+test_pure_reads.py::test_list_bills_returns_derived_status_and_never_writes
+test_pure_reads.py::test_update_bill_refreshes_cache_with_exactly_one_status_write
+test_pure_reads.py::test_create_bill_with_past_next_billing_date_caches_overdue
+
+# --- configuration, health, repo wiring -----------------------------------------
+test_config_flags.py::test_flag_accepts_the_team_spellings[YES-True]
+test_config_flags.py::test_flag_accepts_the_team_spellings[0-False]
+test_health_modes.py::test_health_reports_disabled_modes_and_ai_unavailable_when_ollama_is_down
+test_health_modes.py::test_health_reports_enabled_modes_and_ai_enabled_when_ollama_answers
+test_repo_config.py::test_compose_bills_backend_block_carries_the_switches_and_keeps_the_r0_ollama_wiring
+test_repo_config.py::test_sophia_ci_disables_mcp_and_rag_and_asserts_it
+
+# --- AI guard, prompts, model client --------------------------------------------
+test_ai_guard.py::test_validate_dispute_draft_accepts_a_valid_response
+test_ai_guard.py::test_validate_dispute_draft_rejects_short_letter
+test_ai_guard.py::test_validate_chat_response_accepts_a_valid_response
+test_ai_guard.py::test_validate_chat_response_rejects_bad_op
+test_ai_guard.py::test_guard_retries_once_then_succeeds
+test_ai_guard.py::test_guard_falls_back_after_two_failed_attempts
+test_ai_guard.py::test_guard_falls_back_when_ollama_unreachable_and_never_raises
+test_ai_guard.py::test_enforce_payment_method_step_injects_direct_debit_step_when_missing
+test_ai_guard.py::test_enforce_payment_method_step_does_not_duplicate_when_already_present
+test_ollama_client.py::test_chat_asks_ollama_to_keep_the_model_loaded
+test_grounded_schema.py::test_validator_accepts_the_shape_and_rejects_each_bad_field
+test_grounded_schema.py::test_fallback_is_an_insufficient_answer
+test_fragment_errors.py::test_both_ui_blueprints_share_one_handler_pair
+test_contract_transactions.py::test_live_path_normalises_rows_and_reports_up
+test_contract_transactions.py::test_live_path_falls_back_to_stub_when_service_errors
+
+# --- JSON and fragment routes ---------------------------------------------------
+test_backend_routes.py::test_timeline_tags_and_display_amount_formatting
+test_backend_routes.py::test_payment_post_refreshes_owning_bill_status
+test_backend_routes.py::test_barely_using_flags_bills_billed_repeatedly_since_confirmation
+test_backend_routes.py::test_handoff_urls_start_with_configured_frontend_origin
+test_api_routes_r1.py::test_mode_error_carries_safe_message_status_and_code
+test_api_routes_r1.py::test_tools_json_twin_refuses_when_disabled_with_janelle_shape
+test_api_routes_r1.py::test_tools_json_twin_passes_arguments_and_wraps_the_rows
+test_frontend_fragments.py::test_bills_fragment_verbatim_header_and_columns
+test_frontend_fragments.py::test_dispute_panel_status_buttons_are_gated_and_named
+test_frontend_fragments.py::test_calendar_fragment_verbatim_copy
+test_frontend_fragments.py::test_disputes_fragment_verbatim_copy
+test_frontend_fragments.py::test_timeline_fragment_actual_vs_predicted_formatting
+test_frontend_fragments.py::test_handoff_subscription_prefills_add_bill_form
+
+# --- MCP tools and RAG evidence -------------------------------------------------
+test_mcp_client.py::test_disabled_never_constructs_a_client
+test_mcp_client.py::test_tool_not_in_allow_list_is_refused_before_connecting
+test_mcp_client.py::test_connection_failure_is_503_without_upstream_text
+test_mcp_client.py::test_tool_error_is_502_without_upstream_text
+test_mcp_client.py::test_call_tool_returns_data_and_duration_and_passes_arguments_and_timeouts
+test_mcp_bills_tools.py::test_list_bills_returns_every_row_or_one_type_and_reads_bills_db_with_a_timeout
+test_mcp_bills_tools.py::test_compare_puts_bank_charges_in_cents_beside_the_bill_within_the_window
+test_mcp_bills_tools.py::test_the_three_tools_are_registered_read_only_beside_the_existing_four
+test_tools_routes.py::test_match_transactions_calls_search_transactions_with_the_bill_merchant
+test_tools_routes.py::test_payment_history_calls_get_bill_payments_and_renders_the_payments_in_dollars
+test_tools_routes.py::test_compare_sends_a_90_day_window_ending_today_and_notes_the_difference
+test_tools_routes.py::test_disabled_renders_the_disabled_copy_and_bills_db_outage_is_a_fragment
+test_evidence_service.py::test_disabled_modes_refuse_before_any_call
+test_evidence_service.py::test_grounded_answer_cites_only_retrieved_sources_and_rates_the_cited_chunk
+test_evidence_service.py::test_retrieve_keeps_only_bill_files_from_the_shared_billing_collection
+test_evidence_service.py::test_all_chunks_beyond_rag_low_is_insufficient_with_no_model_call
+test_evidence_service.py::test_guard_fallback_is_reported_not_dressed_up_as_an_answer
+test_evidence_service.py::test_blank_question_is_a_400
+test_evidence_routes.py::test_disabled_and_unavailable_render_error_fragments_without_server_names
+
+# --- inbound handoffs -----------------------------------------------------------
+test_handoff_routes.py::test_recurring_end_for_known_merchant_uses_effective_from
+test_handoff_routes.py::test_recurring_unknown_merchant_previews_a_create
+test_handoff_routes.py::test_recurring_response_is_preview_only_with_apply_url_and_ui_url
+test_handoff_routes.py::test_suggestions_creates_unconfirmed_f4_subscription
+test_handoff_amount_guard.py::test_handoff_subscription_non_finite_amount_is_rejected[nan]
+
+# --- UI writes (live database) --------------------------------------------------
+test_ui_write_routes.py::test_post_ui_bills_add_returns_html_and_toast_and_oob
+test_ui_write_routes.py::test_post_ui_bills_edit_changes_db_and_returns_oob
+test_ui_write_routes.py::test_post_ui_bills_cancel_sets_end_date_and_drops_from_timeline
+test_ui_write_routes.py::test_post_ui_bills_delete_removes_bill_and_returns_removed_toast
+test_ui_write_routes.py::test_post_ui_bills_confirm_sets_confirmed_at_no_oob_needed
+test_ui_write_routes.py::test_post_ui_payments_records_payment_and_refreshes_projection
+test_ui_write_routes.py::test_post_ui_disputes_creates_dispute_and_targets_dispute_panel
+test_ui_write_routes.py::test_post_ui_disputes_status_updates_status
+test_ui_write_routes.py::test_post_ui_disputes_regenerate_adds_a_version
+test_ui_write_routes.py::test_ui_dispute_delete_removes_it_and_refreshes_the_list
+test_ui_write_routes.py::test_ui_chat_never_writes_bills_and_apply_does
+test_ui_write_routes.py::test_bill_add_form_missing_required_field_returns_422_error_fragment
+test_ui_write_routes.py::test_api_chat_apply_disallowed_field_returns_400
+test_chat_apply_service_path.py::test_chat_apply_update_refuses_a_non_iso_date
+test_chat_apply_service_path.py::test_chat_apply_refuses_a_raw_amount_cents_key
+test_chat_apply_service_path.py::test_chat_apply_create_syncs_the_status_cache
+
+# --- chat: suggestions, proposal honesty, grounded answers ------------------------
+test_suggestions.py::test_chat_proposal_creates_a_pending_suggestion_not_a_bill
+test_suggestions.py::test_approve_applies_and_refreshes_the_bills_table
+test_suggestions.py::test_reject_changes_nothing_and_tells_the_model
+test_suggestions.py::test_a_suggestion_applies_at_most_once
+test_suggestions.py::test_update_suggestion_panel_shows_a_before_after_diff
+test_suggestions.py::test_api_suggestion_endpoints_roundtrip
+test_suggestions.py::test_suggestion_card_offers_all_three_actions
+test_chat_proposal_honesty.py::test_create_without_entity_is_rejected
+test_chat_proposal_honesty.py::test_update_and_delete_without_id_are_rejected[update]
+test_chat_proposal_honesty.py::test_underspecified_create_becomes_a_question_not_a_proposal
+test_chat_proposal_honesty.py::test_fully_specified_create_survives_vetting
+test_chat_proposal_honesty.py::test_non_iso_date_in_proposal_becomes_a_question
+test_chat_proposal_honesty.py::test_valid_dispute_proposal_survives_vetting
+test_chat_proposal_honesty.py::test_underspecified_create_from_the_model_yields_a_question_and_no_confirm
+test_chat_proposal_honesty.py::test_update_whose_model_id_is_another_bill_targets_the_bill_the_user_named
+test_chat_proposal_honesty.py::test_update_amount_the_user_never_stated_is_refused
+test_chat_proposal_honesty.py::test_create_whose_values_are_all_stated_still_becomes_a_suggestion
+test_chat_proposal_honesty.py::test_amount_must_appear_as_a_whole_number_token[it costs $14 now-1399-False]
+test_chat_proposal_honesty.py::test_cadence_needs_a_stated_phrase[$17.50 every two weeks-weekly-False]
+test_chat_proposal_honesty.py::test_create_date_needs_both_day_and_month[first charge 10 Oct-True]
+test_chat_proposal_honesty.py::test_create_date_needs_both_day_and_month[first charge from October-False]
+test_chat_grounded.py::test_plain_question_is_answered_from_the_corpus_with_chips_and_badge
+test_chat_grounded.py::test_insufficient_context_is_the_fixed_line_with_no_chips
+test_chat_grounded.py::test_mcp_failure_falls_back_to_the_models_reply
+test_chat_grounded.py::test_modes_off_never_reach_the_corpus
+test_chat_grounded.py::test_a_general_question_about_what_is_due_is_code_computed_whatever_the_model_says[What's due this week?]
+test_chat_grounded.py::test_a_question_about_what_a_bill_charged_is_answered_by_the_compare_tool
+test_chat_grounded.py::test_a_question_with_a_change_verb_still_proposes
+test_chat_grounded.py::test_a_dispute_request_naming_one_bill_is_built_in_code_whatever_the_model_emits[model_reply0]
+test_chat_grounded.py::test_a_dropped_proposal_is_never_claimed_when_nothing_else_answers_a_question
+
+# --- dispute letters: evidence, warm-up -----------------------------------------
+test_dispute_evidence.py::test_bank_evidence_lists_the_merchants_charges_confirmed_ones_first
+test_dispute_evidence.py::test_bank_evidence_is_none_with_no_tools_when_mcp_is_off_or_the_comparison_fails
+test_dispute_evidence.py::test_policy_evidence_keeps_only_whole_policy_sentences_closest_chunk_first
+test_dispute_evidence.py::test_policy_evidence_is_none_when_rag_or_mcp_is_off_or_the_tool_fails
+test_dispute_evidence.py::test_draft_still_drafts_without_policy_notes_when_retrieval_is_down
+test_dispute_evidence.py::test_draft_carries_the_evidence_it_used
+test_dispute_evidence.py::test_dispute_panel_shows_the_evidence_and_tools_under_the_letter
+test_draft_model_warmup.py::test_warm_posts_an_empty_generate_with_the_keep_alive_and_swallows_failures
+test_draft_model_warmup.py::test_a_warm_up_that_cannot_start_never_breaks_the_reply
+
+# --- Release 2: Multi-Agent Server client and workflows ---------------------------
+test_multi_agent_client.py::test_disabled_raises_before_any_network
+test_multi_agent_client.py::test_run_workflow_posts_the_contract_body_with_the_token
+test_multi_agent_client.py::test_record_decision_posts_to_the_workflow_and_validates_locally
+test_multi_agent_client.py::test_a_failed_workflow_is_returned_not_raised
+test_multi_agent_client.py::test_transport_failures[raises0-multi_agent_timeout]
+test_multi_agent_client.py::test_http_errors[503-body0-multi_agent_busy]
+test_multi_agent_client.py::test_404_is_not_found
+test_multi_agent_routes.py::test_letter_workflow_sends_bills_evidence_and_waits_for_the_human
+test_multi_agent_routes.py::test_accept_stores_the_letter_as_the_next_draft_with_the_review
+test_multi_agent_routes.py::test_partially_accept_needs_a_reason_and_stores_the_edit
+test_multi_agent_routes.py::test_reject_stores_nothing_and_a_second_decision_is_409
+test_multi_agent_routes.py::test_a_failed_agent_leaves_only_reject
+test_multi_agent_routes.py::test_disabled_mode_refuses_with_the_shared_shape
+test_multi_agent_routes.py::test_ui_block_shows_the_draft_and_the_decision_saves_a_version
+test_multi_agent_routes.py::test_chat_suggestion_workflow_applies_the_agents_change_on_accept
+test_multi_agent_routes.py::test_chat_hook_starts_a_run_for_a_fresh_proposal_and_never_breaks_the_reply

@@ -216,16 +216,20 @@ proposal until the user decides on it) and why each exists.
 ## Testing and evidence
 
 ```
-python -m pytest sophia/test -q -n auto -m "not extended"       # the essential set, what Sophia-CI runs (~14 s on 2 cores)
-python -m pytest sophia/test -q -m extended                     # the adversarial chat-routing sweep, before a release
+python -m pytest sophia/test -q -n auto -m "not extended"       # the core set, what Sophia-CI runs (~11 s on 2 cores)
+python -m pytest sophia/test -q -n auto -m extended              # everything else, before a release
 python -m pytest sophia/test -q --cov=sophia/backend --cov-report=term   # the coverage report, locally
+python -m pytest sophia/agentic_loop/tests -q                    # the agentic loop tooling (its own CI job)
 ```
 
-754 tests (538 essential + 216 extended), 19 Oct 2026. Release 2 moved the
-adversarial sweep in `test_chat_route_matrix.py` (every corpus phrasing × six
-model misreadings) behind the `extended` marker and took coverage out of CI:
-together they were two thirds of a 51 s CI test step, and CI is a gate, not a
-report. The faithful case for every phrasing still runs in CI. Coverage was
+713 tests, 20 Oct 2026: 169 core + 544 extended. `sophia/test/ci_core.txt`
+names the core set, one test per behaviour or route plus one case of each
+parametrized sweep; `conftest.py` marks every other test `extended`, and a
+core entry that stops matching a test fails collection. The extended set keeps
+the edge cases, the copy-level fragment checks and the adversarial sweep in
+`test_chat_route_matrix.py` (every corpus phrasing × six model misreadings);
+nothing was deleted, so run both before a release. Coverage is a local
+report, not a CI gate. Coverage was
 91% across `sophia/backend` when last measured (7 Sep 2026, `aede425`); the
 saved output is `docs/release-0/sophia/evidence/compose/pytest-283-passed.txt`.
 
