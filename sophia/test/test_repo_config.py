@@ -32,11 +32,11 @@ def test_sophia_ci_disables_mcp_and_rag_and_asserts_it():
         assert "docker-compose.yml" in triggers[event]["paths"]
         assert "ai-services/rag-server/sources/billing/**" in triggers[event]["paths"]
     assert "workflow_dispatch" in triggers
-    assert workflow["env"] == {"MCP_ENABLED": "false", "RAG_ENABLED": "false"}
+    assert workflow["env"] == {"MCP_ENABLED": "false", "RAG_ENABLED": "false", "MULTI_AGENT_ENABLED": "false"}
     assert set(workflow["jobs"]) >= {"test", "docker-health"}
     assert "rag" not in workflow["jobs"]
     assert "--no-deps" in text
-    assert '"mcp":"disabled"' in text and '"rag":"disabled"' in text
+    assert '"mcp":"disabled"' in text and '"rag":"disabled"' in text and '"multi_agent":"disabled"' in text
     assert '"ai":"unavailable"' in text and '"ollama":"down"' in text
     assert '"code":"mcp_disabled"' in text and "/api/evidence" in text and "/api/tools/retrieve_context" in text
     assert "- run: sleep 5" not in text and "seq 1 12" in text

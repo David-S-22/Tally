@@ -263,6 +263,11 @@ billsRoot.addEventListener("htmx:confirm", function (evt) {
     (evt.detail.elt.closest(".chat-panel form") ||
       evt.detail.elt.closest(".preview-card") ||
       evt.detail.elt.closest(".suggestion-card") ||
+      // The agent-review block is the same kind of review step: it shows the
+      // plan, the draft and the reviewer's risks, and Accept/Reject is the
+      // decision. (The "Draft with agents" button that starts a run is not in
+      // the block and keeps its data-confirm.)
+      evt.detail.elt.closest(".agent-decision") ||
       evt.detail.elt.closest(".tools-panel form"))
   ) {
     return;

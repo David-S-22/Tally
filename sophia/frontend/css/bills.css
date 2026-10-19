@@ -904,3 +904,37 @@
   font-size: 0.8em;
   color: var(--mut);
 }
+
+/* Release 2: the multi-agent review block (dispute panel and suggestion cards) */
+#bills-root .agent-review { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); }
+#bills-root .agent-review-running { border-style: dashed; }
+#bills-root .agent-review-error, #bills-root .agent-review-failed { border-color: var(--bad); }
+#bills-root .agent-review-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0 0 6px; font-weight: 600; }
+#bills-root .agent-stages { font-weight: 400; font-size: 0.85em; color: var(--mut); }
+#bills-root .agent-stage { padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); }
+#bills-root .agent-stage-success { border-color: var(--ok); color: var(--ok); }
+#bills-root .agent-stage-pending, #bills-root .agent-stage-waiting { opacity: 0.7; }
+#bills-root .agent-stage-error, #bills-root .agent-stage-timeout, #bills-root .agent-stage-skipped { border-color: var(--bad); color: var(--bad); }
+#bills-root .agent-elapsed { margin-left: auto; font-weight: 400; font-size: 0.85em; color: var(--mut); font-variant-numeric: tabular-nums; }
+#bills-root .agent-working { margin: 4px 0; color: var(--mut); }
+#bills-root .agent-working::before { content: ""; display: inline-block; width: 0.7em; height: 0.7em; margin-right: 6px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: agent-spin 0.9s linear infinite; vertical-align: -1px; }
+@keyframes agent-spin { to { transform: rotate(360deg); } }
+#bills-root .agent-plan summary { cursor: pointer; color: var(--mut); font-size: 0.9em; }
+#bills-root .agent-plan ol { margin: 4px 0 8px 18px; font-size: 0.9em; }
+#bills-root .agent-draft { width: 100%; min-height: 230px; margin: 6px 0; }
+#bills-root .agent-draft-json { font-family: ui-monospace, monospace; font-size: 0.85em; min-height: 90px; }
+#bills-root .agent-proposal { margin: 6px 0; }
+#bills-root .agent-missing, #bills-root .agent-limitations { margin: 4px 0; font-size: 0.9em; color: var(--warn); }
+#bills-root .agent-verdict { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--line); font-size: 0.92em; }
+#bills-root .agent-verdict-approve { border-left-color: var(--ok); }
+#bills-root .agent-verdict-approve_with_changes { border-left-color: var(--warn); }
+#bills-root .agent-verdict-reject { border-left-color: var(--bad); }
+#bills-root .agent-review-text { display: block; margin-top: 2px; color: var(--mut); }
+#bills-root .agent-risks { margin: 6px 0 0 18px; }
+#bills-root .agent-recommendations { margin: 4px 0 0 18px; color: var(--mut); }
+#bills-root .agent-reason-label { display: block; margin: 6px 0; font-size: 0.9em; }
+#bills-root .agent-reason { width: 100%; margin-top: 2px; }
+#bills-root .agent-decision button.partial { border-color: var(--accent); }
+#bills-root .agent-decided, #bills-root .agent-meta { margin: 4px 0; font-size: 0.85em; color: var(--mut); }
+#bills-root .agent-verdict-chip { display: inline-block; margin: 4px 0 8px; padding: 2px 9px; border-radius: 999px; font-size: 0.85em; border: 1px solid var(--line); color: var(--mut); }
+#bills-root .mut { color: var(--mut); }

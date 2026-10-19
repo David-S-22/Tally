@@ -1,0 +1,77 @@
+{# Release 2: one Planner -> Worker -> Reviewer run and the human decision on it.
+   Rendered inside #dispute-panel (kind=dispute_letter) or a .suggestion-card
+   (kind=chat_suggestion). While the run is in flight the block polls itself
+   every few seconds; once the record is in it shows the three stages, the
+   Worker's draft (editable, so Partially Accept is an edit), the Reviewer's
+   risks and the three decisions. Nothing is saved until a decision lands. #}
+{% set poll_url = "/bills-backend/ui/workflow-runs/" ~ run.run_id ~ "?kind=" ~ run.kind ~ "&subject_id=" ~ run.subject_id %}
+{% set decide_url = ("/bills-backend/ui/disputes/" ~ run.subject_id ~ "/workflow/" ~ (run.workflow_id or "") ~ "/decision") if run.kind == "dispute_letter" else ("/bills-backend/ui/suggestions/" ~ run.subject_id ~ "/workflow/" ~ (run.workflow_id or "") ~ "/decision") %}
+{% set target = "#dispute-panel" if run.kind == "dispute_letter" else "#suggestions-panel" %}
+<div class="agent-review agent-review-{{ run.state }}" id="agent-review-{{ run.kind }}-{{ run.subject_id }}" data-run-id="{{ run.run_id }}"
+     {% if run.state == "running" %}hx-get="{{ poll_url }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <p class="agent-review-heading">Multi-agent review
+    <span class="agent-stages">
+      {% for role in ["planner", "worker", "reviewer"] %}
+        {% set st = run.summary.stages[role] if run.summary else ("pending") %}
+        <span class="agent-stage agent-stage-{{ st }}">{{ role }}</span>{% if not loop.last %} → {% endif %}
+      {% endfor %}
+      → <span class="agent-stage agent-stage-{{ 'success' if run.summary and run.summary.decision else ('pending' if run.state in ('done','failed') else 'waiting') }}">human</span>
+    </span>
+    <span class="agent-elapsed">{{ run.elapsed_s }}s</span>
+  </p>
+
+  {% if run.state == "running" %}
+    <p class="agent-working">Planner, Worker and Reviewer are working on it — this block updates by itself. You can keep using Tally meanwhile.</p>
+  {% elif run.state == "error" %}
+    <p class="suggestion-error">The agents could not run ({{ run.error }}). Nothing was changed.</p>
+  {% else %}
+    {% set s = run.summary %}
+    {% if s.plan %}<details class="agent-plan"><summary>Plan ({{ s.plan|length }} steps)</summary><ol>{% for step in s.plan %}<li>{{ step }}</li>{% endfor %}</ol></details>{% endif %}
+    {% if s.missing_information %}<p class="agent-missing">Still needed: {{ s.missing_information|join("; ") }}</p>{% endif %}
+
+    {% if s.failed %}
+      <p class="suggestion-error">{{ s.failed_agent or "An agent" }} failed, so there is no draft to accept — only Reject is available.</p>
+    {% else %}
+      {% if run.kind == "dispute_letter" %}
+        <textarea class="letter agent-draft" name="corrected_output" aria-label="Drafted letter — edit it to partially accept">{{ s.output }}</textarea>
+      {% else %}
+        {% if s.structured %}
+          <p class="agent-proposal">{{ s.output }}</p>
+          <textarea class="agent-draft agent-draft-json" name="corrected_output" aria-label="Proposed change as JSON — edit it to partially accept">{{ s.structured|tojson(indent=1) }}</textarea>
+        {% else %}
+          <p class="agent-proposal">{{ s.output }}</p>
+          <p class="agent-missing">No appliable change was proposed; reject it or tell Tally the missing details.</p>
+        {% endif %}
+      {% endif %}
+      {% if s.limitations %}<p class="agent-limitations">Worker notes: {{ s.limitations|join("; ") }}</p>{% endif %}
+      {% if s.evidence_used %}<p class="evidence-meta">Evidence used: {% for src in s.evidence_used %}<code>{{ src }}</code>{{ ", " if not loop.last }}{% endfor %}</p>{% endif %}
+    {% endif %}
+
+    <div class="agent-verdict agent-verdict-{{ s.verdict or 'none' }}">
+      <strong>Reviewer: {{ (s.verdict or "no verdict")|replace("_", " ") }}</strong>
+      {% if s.review %}<span class="agent-review-text">{{ s.review }}</span>{% endif %}
+      {% if s.risks %}<ul class="agent-risks">{% for r in s.risks %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}
+      {% if s.recommendations %}<ul class="agent-recommendations">{% for r in s.recommendations %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+
+    {% if s.decision %}
+      <p class="agent-decided">Decided: <strong>{{ s.decision }}</strong>.</p>
+    {% else %}
+      <form class="agent-decision" hx-post="{{ decide_url }}" hx-target="{{ target }}" hx-swap="outerHTML" hx-disabled-elt="find button" hx-indicator="find .working">
+        <input type="hidden" name="run_id" value="{{ run.run_id }}">
+        <label class="agent-reason-label">Reason <span class="mut">(needed to edit, or to accept against the reviewer)</span>
+          <input class="agent-reason" name="reason" placeholder="e.g. removed the refund timeframe the reviewer flagged">
+        </label>
+        <div class="suggestion-actions">
+          {% if not s.failed %}
+          <button class="confirm btn-sm" name="decision" value="Accept" {% if s.verdict != "approve" %}title="The reviewer did not approve; a reason is required"{% endif %}>Accept</button>
+          <button class="btn-sm partial" name="decision" value="Partially Accept" title="Keeps your edited version">Accept with my edits</button>
+          {% endif %}
+          <button class="keep-it btn-sm" name="decision" value="Reject">Reject</button>
+          <span class="working" aria-live="polite">Saving…</span>
+        </div>
+      </form>
+    {% endif %}
+    {% if s.duration_ms %}<p class="agent-meta mut">Agents took {{ (s.duration_ms / 1000)|round(1) }}s · workflow {{ run.workflow_id }}</p>{% endif %}
+  {% endif %}
+</div>

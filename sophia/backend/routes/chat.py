@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify, request
 from sophia.backend.clients import bills_db
 from sophia.backend.json_body import json_body
 from sophia.backend.services import chat as chat_service
+from sophia.backend.services import multi_agent as multi_agent_service
 
 bp = Blueprint("chat", __name__, url_prefix="/api/chat")
 
@@ -57,3 +58,15 @@ def approve_suggestion(suggestion_id):
 @bp.post("/suggestions/<int:suggestion_id>/reject")
 def reject_suggestion(suggestion_id):
     return jsonify(chat_service.reject_suggestion(suggestion_id))
+
+
+@bp.post("/suggestions/<int:suggestion_id>/workflow/<workflow_id>/decision")
+def decide_suggestion_workflow(suggestion_id, workflow_id):
+    """Release 2: the human decision on the agents' proposal; Accept applies it, Reject rejects the suggestion."""
+    payload = json_body()
+    return jsonify(
+        multi_agent_service.decide_chat_suggestion(
+            suggestion_id, workflow_id, payload.get("decision"),
+            corrected_output=payload.get("corrected_output"), reason=payload.get("reason"),
+        )
+    )

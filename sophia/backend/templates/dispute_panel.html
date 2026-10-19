@@ -18,6 +18,9 @@
 
   {% if evidence_note %}<p class="evidence-note">{{ evidence_note }}</p>{% endif %}
   <textarea class="letter">{{ draft.letter_text if draft else "" }}</textarea>
+  {% if draft and draft.evidence and draft.evidence.review and draft.evidence.review.verdict %}
+  <p class="agent-verdict-chip agent-verdict-{{ draft.evidence.review.verdict }}">Drafted by the agents · reviewer: {{ draft.evidence.review.verdict|replace("_", " ") }}{% if draft.evidence.review.risks %} · {{ draft.evidence.review.risks|length }} risk{{ "s" if draft.evidence.review.risks|length != 1 }} noted{% endif %}</p>
+  {% endif %}
   {% if draft and draft.evidence and (draft.evidence.bank or draft.evidence.policy) %}
   <div class="evidence-used">
     <p class="evidence-citations">{% for row in draft.evidence.bank %}<span class="citation-chip">{{ row }}</span>{% endfor %}{% for row in draft.evidence.policy %}<span class="citation-chip">{{ row }}</span>{% endfor %}</p>
@@ -40,6 +43,11 @@
 
   <button type="button" data-action="copy-note" data-toast="Copied">Copy the note</button>
   <button type="button" data-action="rewrite" data-dispute-id="{{ dispute.id }}">Rewrite it</button>
+  {% if multi_agent_enabled %}
+  <button class="draft-with-agents" hx-post="/bills-backend/ui/disputes/{{ dispute.id }}/workflow" hx-target="#agent-review-slot" hx-swap="innerHTML" hx-disabled-elt="this" hx-indicator="next .working" data-confirm="Ask the Planner, Worker and Reviewer agents to draft this letter? You decide before anything is saved.">Draft with agents</button>
+  <span class="htmx-indicator working">Starting the agents…</span>
+  {% endif %}
+  <div id="agent-review-slot" class="agent-review-slot">{% if agent_run %}{% with run=agent_run %}{% include "agent_review.html" %}{% endwith %}{% endif %}</div>
   <div class="rewrite-feedback" hidden>
     <textarea class="feedback" name="feedback" placeholder="What should change?"></textarea>
     <button hx-post="/bills-backend/ui/disputes/{{ dispute.id }}/regenerate" hx-include=".feedback" hx-target="#dispute-panel" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator="next .working" data-confirm="Send this feedback and redraft the letter?">Send feedback</button>
