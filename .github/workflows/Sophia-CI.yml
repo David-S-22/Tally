@@ -39,7 +39,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: sophia/requirements.txt
+          cache-dependency-path: |
+            sophia/requirements.txt
+            ai-services/multi-agent-server/requirements.txt
       - name: Install dependencies
         run: pip install -r sophia/requirements.txt
       - name: Run tests

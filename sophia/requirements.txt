@@ -8,3 +8,5 @@ pytest-cov==7.1.0
 pytest-xdist==3.8.0
 fastmcp==4.0.3
 python-dateutil==2.9.0.post0
+# test_multi_agent_routes.py drives the real server coordinator, so its pins come along (path is relative to this file).
+-r ../ai-services/multi-agent-server/requirements.txt
