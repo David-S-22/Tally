@@ -6,6 +6,7 @@ import json
 import pytest
 
 from sophia.backend.clients import bills_db as bills_db_module
+from sophia.backend.engine.money import format_actual as _money
 from sophia.backend.services import chat as chat_service
 from sophia.backend.services.errors import ServiceError
 from conftest import response_text as _text
@@ -121,15 +122,23 @@ def test_a_suggestion_applies_at_most_once(live_client, monkeypatch):
 
 
 def test_update_suggestion_panel_shows_a_before_after_diff(live_client, monkeypatch):
+    # Read the current values rather than assume the seed: earlier tests in
+    # this module share the database. Spotify has an amount to diff against
+    # and no end date, so both row shapes render.
     spotify = next(b for b in bills_db_module.list_bills() if b["name"] == "Spotify")
+    old_cents = spotify["amount_cents"]
+    new_cents = old_cents + 200
     _propose(live_client, monkeypatch, {
         "op": "update", "entity": "bill", "id": spotify["id"],
-        "fields": {"end_date": "2026-09-16"}, "question": "none",
-        "say": "I've suggested ending Spotify — approve to save."}, message=SPOTIFY_MESSAGE)
+        "fields": {"amount": new_cents / 100, "end_date": "2026-09-16"}, "question": "none",
+        "say": "I've suggested the new Spotify price and end date. Approve to save."},
+        message=f"Spotify is now ${new_cents / 100:.2f} and I cancelled it from 16 September")
     panel = _text(live_client.get("/ui/suggestions"))
     assert "Update Spotify" in panel
-    assert "2026-09-16" in panel
-    assert "suggestion-old" in panel or "—" in panel  # the before value renders
+    # A field with a value shows it struck through before the new one...
+    assert f'<del class="suggestion-old">{_money(old_cents)}</del> → {_money(new_cents)}' in panel
+    # ...and a field that was empty shows only the new value.
+    assert "<td>2026-09-16</td>" in panel
 
 
 def test_chat_reply_card_names_the_change(live_client, monkeypatch):
@@ -143,10 +152,15 @@ def test_chat_reply_card_names_the_change(live_client, monkeypatch):
 
 
 def test_api_suggestion_endpoints_roundtrip(live_client, monkeypatch):
+    # Flip Rent's current flag (seeded as excluded): proposing the value it
+    # already has is a no-op and creates no suggestion.
+    rent = next(b for b in bills_db_module.list_bills() if b["id"] == 1)
+    flipped = 0 if rent["exclude_from_plan"] else 1
     _propose(live_client, monkeypatch, {
         "op": "update", "entity": "bill", "id": 1,
-        "fields": {"exclude_from_plan": 1}, "question": "none",
-        "say": "I've suggested excluding Rent from the plan."})
+        "fields": {"exclude_from_plan": flipped}, "question": "none",
+        "say": "I've suggested changing whether Rent is in the plan."},
+        message="Include Rent in the plan" if flipped == 0 else "Leave Rent out of the plan")
     listed = live_client.get("/api/chat/suggestions", query_string={"status": "pending"}).get_json()
     suggestion_id = listed[-1]["id"]
     applied = live_client.post(f"/api/chat/suggestions/{suggestion_id}/approve")
