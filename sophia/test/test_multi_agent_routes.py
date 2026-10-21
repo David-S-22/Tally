@@ -43,7 +43,7 @@ class BillsModel:
             "worker": {"output": LETTER if letter_task else "Ends Spotify after 16 Sep.", "structured": None if letter_task else self.structured, "evidence_used": sources, "limitations": []},
             "reviewer": {"verdict": self.verdict, "risks": [] if self.verdict == "approve" else ["The refund timeframe is not in the evidence"], "recommendations": [], "review": "Checked.", "evidence_used": sources},
         }
-        return json.dumps(results[role])
+        return json.dumps(results[role]), "High"  # (content, confidence) since #222
 
     def health(self):
         return {"ollama": "up", "ready": True, "missing_models": []}
@@ -53,7 +53,7 @@ class BillsModel:
 def world(live_client, monkeypatch, tmp_path):
     """Bills app on the live DB, MCP answering the bank comparison, the real server coordinator behind the client."""
     state = SimpleNamespace(client=live_client, model=BillsModel(), posted=[])
-    settings = Settings()
+    settings = Settings(host="127.0.0.1")  # #222 made the default 0.0.0.0, which demands a token
     server = create_server(log_dir=tmp_path, settings=settings, agent_runner=Agents(settings, state.model)).test_client()
 
     def request(method, url, json=None, headers=None, timeout=None):
@@ -250,6 +250,9 @@ def test_chat_hook_starts_a_run_for_a_fresh_proposal_and_never_breaks_the_reply(
 
 def test_a_chat_proposal_through_ui_chat_starts_the_agents_with_the_bills_as_evidence(world, monkeypatch):
     # The real path: /ui/chat hands the database rows on, not Bill objects.
+    # The module shares one live database: an earlier test may already have ended Spotify on
+    # 16 Sep, and a proposal that changes nothing never becomes a suggestion. Reset it first.
+    bills_db.update_bill(3, {"end_date": None})
     world.model.structured = {"op": "update", "entity": "bill", "id": 3, "fields": {"end_date": "2026-09-16"}}
     proposal = {"op": "update", "entity": "bill", "id": 3, "fields": {"end_date": "2026-09-16"}, "question": "none", "say": "I've suggested ending Spotify after 16 September."}
     monkeypatch.setattr("sophia.backend.ai.guard.chat", lambda model, messages, timeout=None: {"message": {"content": json.dumps(proposal)}})
