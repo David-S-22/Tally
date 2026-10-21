@@ -169,6 +169,32 @@ def test_generation_schema_constrains_sources_without_mutating_shared_schema(rol
     assert ROLE_SCHEMAS[role]["properties"][field].get("maxItems") != 0
 
 
+@pytest.mark.parametrize("role", ["planner", "worker", "reviewer"])
+def test_duplicate_evidence_is_normalized_without_repair(role):
+    field = "required_evidence" if role == "planner" else "evidence_used"
+
+    class DuplicateEvidence(FakeModel):
+        calls = 0
+
+        def generate(self, role, messages, schema, deadline):
+            self.calls += 1
+            content, confidence = super().generate(role, messages, schema, deadline)
+            result = json.loads(content)
+            result[field] *= 2
+            return json.dumps(result), confidence
+
+    model = DuplicateEvidence()
+    request = REQUEST
+    result = Agents(Settings(host="127.0.0.1"), model).run(
+        role, request, time.monotonic() + 10
+    )
+    assert result["status"] == "success"
+    assert result[field] == [item["source"] for item in request["evidence"]]
+    if role == "worker":
+        assert result["evidence_count"] == len(request["evidence"])
+    assert model.calls == 1
+
+
 @pytest.mark.parametrize("failed_role", ["planner", "worker", "reviewer"])
 def test_failed_workflow_is_durable_and_only_rejectable(tmp_path, failed_role):
     class Failed(FakeModel):

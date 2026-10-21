@@ -157,6 +157,10 @@ class Agents:
             content, confidence = self.model.generate(role, messages, schema, deadline)
             try:
                 result = json.loads(content)
+                if isinstance(result, dict):
+                    refs = result.get(reference_field)
+                    if isinstance(refs, list) and all(isinstance(ref, str) for ref in refs):
+                        result[reference_field] = list(dict.fromkeys(refs))
                 validate(result, schema)
                 refs = result.get("evidence_used", result.get("required_evidence", []))
                 if len(set(refs)) != len(refs) or not set(refs) <= sources:
