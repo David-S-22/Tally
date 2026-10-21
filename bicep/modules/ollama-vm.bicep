@@ -118,16 +118,17 @@ runcmd:
     [Service]
     Environment="OLLAMA_HOST=0.0.0.0:11434"
     Environment="OLLAMA_ORIGINS=*"
+    Environment="OLLAMA_MODELS=/usr/share/ollama/.ollama/models"
     EOF
   - systemctl daemon-reload
-  - systemctl restart ollama
+  - systemctl enable --now ollama
   - echo "[$(date)] Waiting for Ollama daemon to respond..." >> /var/log/ollama-init.log
   - until curl -s http://127.0.0.1:11434/api/tags >/dev/null; do sleep 2; done
   - echo "[$(date)] Ollama online. Pulling pre-requisite models..." >> /var/log/ollama-init.log
-  - ollama pull qwen2.5:0.5b >> /var/log/ollama-init.log 2>&1
-  - ollama pull llama3.1:8b >> /var/log/ollama-init.log 2>&1
-  - ollama pull qwen2.5:3b >> /var/log/ollama-init.log 2>&1
-  - ollama pull qwen3:4b >> /var/log/ollama-init.log 2>&1
+  - OLLAMA_HOST=http://127.0.0.1:11434 ollama pull qwen2.5:0.5b >> /var/log/ollama-init.log 2>&1
+  - OLLAMA_HOST=http://127.0.0.1:11434 ollama pull llama3.1:8b >> /var/log/ollama-init.log 2>&1
+  - OLLAMA_HOST=http://127.0.0.1:11434 ollama pull qwen2.5:3b >> /var/log/ollama-init.log 2>&1
+  - OLLAMA_HOST=http://127.0.0.1:11434 ollama pull qwen3:4b >> /var/log/ollama-init.log 2>&1
   - echo "[$(date)] Ollama automated setup complete!" >> /var/log/ollama-init.log
 '''
 
