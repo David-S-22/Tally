@@ -1,0 +1,10 @@
+Given the evidence, state PASS or FAIL for each of these, one line each, quoting the evidence value you used:
+1. Ruff security scan: result Passed.
+2. detect-secrets scan: result Passed.
+3. pip-audit scan: result Passed.
+4. aiden: latest CI run success and at least 2 endpoint tests.
+5. david: latest CI run success and at least 2 endpoint tests.
+6. ethan: latest CI run success and at least 2 endpoint tests.
+7. janelle: latest CI run success and at least 2 endpoint tests.
+8. sophia: latest CI run success and at least 2 endpoint tests.
+Then one sentence overall. For a failed scan, quote its first finding line. If the evidence starts with OBSERVE FAILED, write FAIL for all eight and say why.

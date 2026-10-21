@@ -1,0 +1,10 @@
+Given the evidence, state PASS or FAIL for each of these, one line each, quoting the evidence value you used:
+1. Server: alive and ready with contract version 1.0 (write PASS with "offline export" if the health line says skipped).
+2. Agents: Planner, Worker and Reviewer all have status success and ran in that order.
+3. References: every evidence_used entry names a supplied source.
+4. Reviewer: quote the verdict and the risk and recommendation counts (PASS if a verdict is present).
+5. Human decision: status recorded, with a reason when a non-approve verdict was accepted.
+6. Audit log: events in order with no timestamp going backwards.
+7. History: quote the snapshot count and duration_ms (PASS if both are present).
+8. Confidence: quote the three labels; PASS unless any is Low, then write RISK.
+Then one sentence overall. If the evidence starts with OBSERVE FAILED or says the evidence is unavailable, write FAIL for all eight and say why.

@@ -1,5 +1,6 @@
-openai>=1.0.0
-python-dotenv>=1.0.0
-PyYAML>=6.0
+openai==3.35.1
+python-dotenv==1.2.4
+PyYAML==6.0.3
 fastmcp==4.0.3
-requests>=2.31.0
+requests==2.34.2
+pre-commit==4.7.0

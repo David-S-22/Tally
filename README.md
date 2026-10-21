@@ -12,3 +12,18 @@ python -m agentic_loop.main
 ```
 
 Run records land in `reports/` (gitignored). Details: `agentic_loop/README.md`.
+
+## Pre-commit security scans
+
+`.pre-commit-config.yaml` runs Ruff security rules (`ruff.toml`),
+detect-secrets (`.secrets.baseline`) and pip-audit on every commit, each as
+a pytest file in `tests/pre_commit/`:
+
+```
+pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
+
+The agentic loop's Testing Review mode runs the same scans and records the
+result. Each student's scan report lives in `docs/release-2/<name>/`.
