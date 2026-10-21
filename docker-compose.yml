@@ -121,8 +121,9 @@ services:
       MCP_SERVER_URL: http://host.docker.internal:8000/mcp
       RAG_ENABLED: ${RAG_ENABLED:-true}
       MULTI_AGENT_ENABLED: ${MULTI_AGENT_ENABLED:-true}
-      MULTI_AGENT_SERVER_URL: http://host.docker.internal:5010
+      MULTI_AGENT_SERVER_URL: ${MULTI_AGENT_URL:-http://host.docker.internal:5010}
       MULTI_AGENT_TOKEN: ${MULTI_AGENT_TOKEN:-}
+      MULTI_AGENT_TIMEOUT_SECONDS: ${MULTI_AGENT_TIMEOUT:-600}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
