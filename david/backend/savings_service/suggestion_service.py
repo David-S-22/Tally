@@ -396,7 +396,7 @@ def generate_savings_suggestion(user_prompt: str, system_prompt: str) -> tuple[s
             f"{url}/workflow",
             json=payload,
             headers={"Authorization": f"Bearer {token}"} if token else {},
-            timeout=float(os.environ.get("MULTI_AGENT_TIMEOUT", "600")),
+            timeout=float(os.environ.get("MULTI_AGENT_TIMEOUT", "1800")),
         )
     except requests.ConnectionError:
         raise ValueError("The savings advice service is unavailable. Please try again shortly.") from None
