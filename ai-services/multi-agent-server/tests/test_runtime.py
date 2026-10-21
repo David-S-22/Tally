@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -15,6 +16,26 @@ from settings import Settings
 from storage import InstanceLock, Store
 from test_server import REQUEST, FakeModel, app_at
 from workflow_runner import main
+
+
+@pytest.mark.parametrize("probabilities, expected", [
+    ([0.95, 0.85], "High"),
+    ([0.70], "High"),
+    ([0.90, 0.10], "Medium"),
+    ([0.40], "Medium"),
+    ([0.20, 0.30], "Low"),
+    ([], None),
+])
+def test_confidence_is_calculated_from_provider_logprobs(probabilities, expected):
+    response = ollama.ChatResponse(
+        message={"role": "assistant", "content": "{}"},
+        logprobs=[{"token": "example", "logprob": math.log(p)} for p in probabilities],
+    )
+    with patch("ollama.AsyncClient.chat", return_value=response) as chat:
+        content, confidence = Ollama(Settings()).generate("worker", [], {}, time.monotonic() + 2)
+    assert content == "{}"
+    assert confidence == expected
+    assert chat.call_args.kwargs["logprobs"] is True
 
 
 @pytest.mark.parametrize("feature", FEATURES)
@@ -82,7 +103,7 @@ def test_repair_and_unknown_citations():
 
         def generate(self, *args):
             self.calls += 1
-            return "not json" if self.calls == 1 else super().generate(*args)
+            return ("not json", "High") if self.calls == 1 else super().generate(*args)
 
     model = Repair()
     assert (
@@ -95,9 +116,10 @@ def test_repair_and_unknown_citations():
 
     class Invented(FakeModel):
         def generate(self, *args):
-            result = json.loads(super().generate(*args))
+            content, confidence = super().generate(*args)
+            result = json.loads(content)
             result["required_evidence"] = ["invented"]
-            return json.dumps(result)
+            return json.dumps(result), confidence
 
     with pytest.raises(AgentError, match="failed validation"):
         Agents(Settings(), Invented()).run("planner", REQUEST, time.monotonic() + 10)
@@ -336,11 +358,12 @@ def test_sdk_uses_native_api_schema_options_and_bounds_responses(monkeypatch):
     provider = Ollama(Settings())
     assert (
         provider.generate("planner", [], ROLE_SCHEMAS["planner"], time.monotonic() + 2)
-        == "{}"
+        == ("{}", None)
     )
     body = json.loads(requests[0].content)
     assert requests[0].url.path == "/api/chat"
     assert body["format"] == ROLE_SCHEMAS["planner"]
+    assert body["logprobs"] is True
     assert body["options"]["num_ctx"] == 8192 and body["stream"] is False
 
     def oversized(**kwargs):
@@ -445,10 +468,11 @@ def test_terminal_calls_http_and_includes_reason(monkeypatch, capsys):
 def test_structured_output_decision(tmp_path):
     class Structured(FakeModel):
         def generate(self, role, *args):
-            result = json.loads(super().generate(role, *args))
+            content, confidence = super().generate(role, *args)
+            result = json.loads(content)
             if role == "worker":
                 result["structured"] = {"proposal": "example"}
-            return json.dumps(result)
+            return json.dumps(result), confidence
 
     settings = Settings()
     client = create_app(

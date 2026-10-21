@@ -47,7 +47,7 @@ class FakeModel:
                 "evidence_used": sources,
             },
         }
-        return json.dumps(results[role])
+        return json.dumps(results[role]), "High"
 
     def health(self):
         return {"ollama": "up", "ready": True, "missing_models": []}
@@ -91,6 +91,9 @@ def test_workflow_runs_all_three_agents_and_waits_for_human(http, tmp_path):
         e["source"] for e in EVIDENCE
     ]
     assert body["worker_result"]["evidence_count"] == 2
+    assert body["worker_result"]["confidence"] == "High"
+    saved = http.get(f"/workflow/{body['workflow_id']}").get_json()
+    assert saved["worker_result"]["confidence"] == "High"
     assert body["reviewer_result"]["verdict"] == "approve"
     assert body["human_decision"] == {
         "required": True,
