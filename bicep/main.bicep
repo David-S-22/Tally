@@ -55,10 +55,18 @@ param backendMemory string = '1.0Gi'
 param imageTag string = 'latest'
 
 @description('Enable Model Context Protocol (MCP) integrations in backend services')
-param enableMcp bool = false
+param enableMcp bool = true
 
 @description('Enable Retrieval-Augmented Generation (RAG) integrations in backend services')
-param enableRag bool = false
+param enableRag bool = true
+
+@secure()
+@minLength(32)
+param multiAgentToken string
+param enableMultiAgent bool = true
+param mcpUrl string = 'http://tally-ai.${location}.cloudapp.azure.com:8000/mcp'
+param ragUrl string = 'http://tally-ai.${location}.cloudapp.azure.com:5003'
+param multiAgentUrl string = 'http://tally-ai.${location}.cloudapp.azure.com:5010'
 
 // ==============================================================================
 // 1. Base Infrastructure: Container Registry & Log Analytics
@@ -141,6 +149,7 @@ module modTransactionsDb 'modules/container-app.bicep' = {
     name: 'transactions-db'
     location: location
     environmentId: environment.id
+    externalIngress: true // MCP VM calls this container over HTTPS.
     targetPort: 6001
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
@@ -166,6 +175,7 @@ module modBillsDb 'modules/container-app.bicep' = {
     name: 'bills-db'
     location: location
     environmentId: environment.id
+    externalIngress: true // MCP VM calls this container over HTTPS.
     targetPort: 6005
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
@@ -187,6 +197,7 @@ module modAnomaliesDb 'modules/container-app.bicep' = {
     name: 'anomalies-db'
     location: location
     environmentId: environment.id
+    externalIngress: true // MCP VM calls this container over HTTPS.
     targetPort: 6004
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
@@ -269,7 +280,14 @@ module modTransactionsBackend 'modules/container-app.bicep' = {
     cpu: backendCpu
     memory: backendMemory
     minReplicas: minReplicas
+    appSecrets: { 'multi-agent-token': multiAgentToken }
     env: [
+      { name: 'RAG_SERVER_URL', value: ragUrl }
+      { name: 'MCP_SERVER_URL', value: mcpUrl }
+      { name: 'MULTI_AGENT_TOKEN', secretRef: 'multi-agent-token' }
+      { name: 'MULTI_AGENT_ENABLED', value: enableMultiAgent ? 'true' : 'false' }
+      { name: 'MULTI_AGENT_URL', value: multiAgentUrl }
+      { name: 'MULTI_AGENT_SERVER_URL', value: multiAgentUrl }
       { name: 'FLASK_ENV', value: 'production' }
       { name: 'PORT', value: '5001' }
       { name: 'TRANSACTIONS_DB_URL', value: 'https://transactions-db.${envDomain}' }
@@ -306,14 +324,20 @@ module modBillsBackend 'modules/container-app.bicep' = {
     cpu: backendCpu
     memory: backendMemory
     minReplicas: minReplicas
+    appSecrets: { 'multi-agent-token': multiAgentToken }
     env: [
+      { name: 'RAG_SERVER_URL', value: ragUrl }
+      { name: 'MULTI_AGENT_TOKEN', secretRef: 'multi-agent-token' }
+      { name: 'MULTI_AGENT_ENABLED', value: enableMultiAgent ? 'true' : 'false' }
+      { name: 'MULTI_AGENT_URL', value: multiAgentUrl }
+      { name: 'MULTI_AGENT_SERVER_URL', value: multiAgentUrl }
       { name: 'PORT', value: '5005' }
       { name: 'BILLS_DB_API_URL', value: 'https://bills-db.${envDomain}' }
       { name: 'FRONTEND_ORIGIN', value: 'https://shared-frontend.${envDomain}' }
       { name: 'OLLAMA_URL', value: ollamaUrl }
       { name: 'OLLAMA_KEEP_ALIVE', value: '30m' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
-      { name: 'MCP_SERVER_URL', value: 'http://host.docker.internal:8000/mcp' }
+      { name: 'MCP_SERVER_URL', value: mcpUrl }
       { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
     ]
   }
@@ -336,7 +360,12 @@ module modAnomaliesBackend 'modules/container-app.bicep' = {
     cpu: backendCpu
     memory: backendMemory
     minReplicas: minReplicas
+    appSecrets: { 'multi-agent-token': multiAgentToken }
     env: [
+      { name: 'MULTI_AGENT_TOKEN', secretRef: 'multi-agent-token' }
+      { name: 'MULTI_AGENT_ENABLED', value: enableMultiAgent ? 'true' : 'false' }
+      { name: 'MULTI_AGENT_URL', value: multiAgentUrl }
+      { name: 'MULTI_AGENT_SERVER_URL', value: multiAgentUrl }
       { name: 'FLASK_ENV', value: 'production' }
       { name: 'PORT', value: '5004' }
       { name: 'ANOMALIES_DB_URL', value: 'https://anomalies-db.${envDomain}/anomalies' }
@@ -345,9 +374,9 @@ module modAnomaliesBackend 'modules/container-app.bicep' = {
       { name: 'OLLAMA_MODEL', value: 'llama3.1:8b' }
       { name: 'OLLAMA_LOG_LEVEL', value: 'DEBUG' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
-      { name: 'MCP_SERVER_URL', value: 'http://host.docker.internal:8000/mcp' }
+      { name: 'MCP_SERVER_URL', value: mcpUrl }
       { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
-      { name: 'RAG_SERVER_URL', value: 'http://host.docker.internal:5003' }
+      { name: 'RAG_SERVER_URL', value: ragUrl }
       { name: 'RAG_FEATURE', value: 'anomalies' }
       { name: 'RAG_TOP_K', value: '3' }
       { name: 'RAG_TIMEOUT_SECONDS', value: '15' }
@@ -372,7 +401,12 @@ module modBudgetsBackend 'modules/container-app.bicep' = {
     cpu: backendCpu
     memory: backendMemory
     minReplicas: minReplicas
+    appSecrets: { 'multi-agent-token': multiAgentToken }
     env: [
+      { name: 'MULTI_AGENT_TOKEN', secretRef: 'multi-agent-token' }
+      { name: 'MULTI_AGENT_ENABLED', value: enableMultiAgent ? 'true' : 'false' }
+      { name: 'MULTI_AGENT_URL', value: multiAgentUrl }
+      { name: 'MULTI_AGENT_SERVER_URL', value: multiAgentUrl }
       { name: 'FLASK_ENV', value: 'production' }
       { name: 'PORT', value: '5006' }
       { name: 'BUDGETS_DB_URL', value: 'https://budgets-db.${envDomain}' }
@@ -381,10 +415,10 @@ module modBudgetsBackend 'modules/container-app.bicep' = {
       { name: 'CHAT_MODEL', value: 'qwen2.5:3b' }
       { name: 'AI_TIMEOUT_SECONDS', value: '90' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
-      { name: 'MCP_SERVER_URL', value: 'http://host.docker.internal:8000/mcp' }
+      { name: 'MCP_SERVER_URL', value: mcpUrl }
       { name: 'MCP_TIMEOUT_SECONDS', value: '15' }
       { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
-      { name: 'RAG_SERVER_URL', value: 'http://host.docker.internal:5003' }
+      { name: 'RAG_SERVER_URL', value: ragUrl }
       { name: 'RAG_FEATURE', value: 'budgets' }
       { name: 'RAG_TOP_K', value: '3' }
     ]
@@ -408,7 +442,13 @@ module modSavingsBackend 'modules/container-app.bicep' = {
     cpu: backendCpu
     memory: backendMemory
     minReplicas: minReplicas
+    appSecrets: { 'multi-agent-token': multiAgentToken }
     env: [
+      { name: 'MULTI_AGENT_TOKEN', secretRef: 'multi-agent-token' }
+      { name: 'MULTI_AGENT_ENABLED', value: enableMultiAgent ? 'true' : 'false' }
+      { name: 'MULTI_AGENT_URL', value: multiAgentUrl }
+      { name: 'MULTI_AGENT_SERVER_URL', value: multiAgentUrl }
+      { name: 'RAG_SERVER_URL', value: ragUrl }
       { name: 'FLASK_ENV', value: 'production' }
       { name: 'PORT', value: '5002' }
       { name: 'DB_URL', value: 'https://savings-db.${envDomain}' }
@@ -416,10 +456,9 @@ module modSavingsBackend 'modules/container-app.bicep' = {
       { name: 'OLLAMA_URL', value: '${ollamaUrl}/v1' }
       { name: 'OLLAMA_MODEL', value: 'llama3.1:8b' }
       { name: 'OLLAMA_CLASSIFIER_MODEL', value: 'qwen2.5:3b' }
-      { name: 'MCP_ENABLED', value: 'false' }
-      { name: 'MCP_SERVER_URL', value: 'http://host.docker.internal:8000/mcp' }
-      { name: 'RAG_ENABLED', value: 'false' }
-      { name: 'MULTI_AGENT_ENABLED', value: 'false' }
+      { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
+      { name: 'MCP_SERVER_URL', value: mcpUrl }
+      { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
     ]
   }
   dependsOn: [
@@ -561,7 +600,7 @@ module modSharedFrontend 'modules/container-app.bicep' = {
     location: location
     environmentId: environment.id
     targetPort: 3000
-    externalIngress: true // The only public endpoint
+    externalIngress: true // Public frontend gateway
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
     acrAdminPassword: acrAdminPassword
