@@ -351,31 +351,30 @@ def _build_advice_prompt(
     rag_context_blocks: str,
     previous_suggestion: str | None = None,
 ) -> str:
-    """Constructs the prompt for the savings advice planner model."""
+    """Keep every transaction in compact tables, with advice rules in the task."""
     previous_block = ""
     if previous_suggestion and str(previous_suggestion).strip():
         previous_block = (
-            f"Previous Suggestion: \"{str(previous_suggestion).strip()}\"\n"
-            "Do not generate advice similar to or for the same area as the previous suggestion. Target a different spending area.\n\n"
+            f"Previous Suggestion: \"{str(previous_suggestion).strip()}\"\n\n"
         )
 
+    merchant_columns = ["merchant", "total_spent", "transaction_count", "category"]
+    merchant_table = {
+        "columns": merchant_columns,
+        "rows": [[merchant.get(column, "") for column in merchant_columns] for merchant in spending_summary],
+    }
+    transaction_columns = ["date", "merchant", "description", "amount", "category"]
+    transaction_table = {
+        "columns": transaction_columns,
+        "rows": [[tx.get(column, "") for column in transaction_columns] for tx in formatted_transactions],
+    }
     return (
         f"{user_data}\n\n"
         f"{previous_block}"
-        f"Pre-Calculated Spending Summary by Merchant:\n{json.dumps(spending_summary, separators=(',', ':'))}\n\n"
-        f"Retrieved Transactions:\n{json.dumps(formatted_transactions, separators=(',', ':'))}\n\n"
-        f"Retrieved Savings Advice Guidelines:\n{rag_context_blocks}\n\n"
-        "Output 1 or 2 direct savings advice sentences in a single plain text paragraph. "
-        "Start immediately with an action verb (e.g. 'Cancel...', 'Pause...', 'Trim...'). "
-        "Deliver personalized, actionable advice linked to an active goal name, respecting user feedback and exploring varied discretionary areas. "
-        "Do NOT include any intro, preamble, quotation marks, or closing notes/disclaimers. "
-        "If context is insufficient, reply strictly with: Insufficient context to generate savings advice."
+        f"Pre-Calculated Spending Summary by Merchant:\n{json.dumps(merchant_table, separators=(',', ':'))}\n\n"
+        f"Retrieved Transactions:\n{json.dumps(transaction_table, separators=(',', ':'))}\n\n"
+        f"Retrieved Savings Advice Guidelines:\n{rag_context_blocks}"
     )
-
-
-# Match the multi-agent server's stage input limit. Count JSON escaping and
-# UTF-8 bytes so this catches requests that exceed the actual serialized limit.
-SAVINGS_INPUT_BUDGET = 64 * 1024
 
 
 def generate_savings_suggestion(user_prompt: str, system_prompt: str) -> tuple[str, str, dict[str, Any]]:
@@ -392,15 +391,6 @@ def generate_savings_suggestion(user_prompt: str, system_prompt: str) -> tuple[s
             "data": {"prompt": user_prompt},
         }],
     }
-    stage_input = {
-        "task": payload["task"],
-        "evidence": payload["evidence"],
-        "context": {},
-    }
-    if len(json.dumps(stage_input, allow_nan=False).encode("utf-8")) > SAVINGS_INPUT_BUDGET:
-        raise ValueError(
-            "Savings evidence exceeds the 64 KiB model input limit."
-        )
     try:
         response = requests.post(
             f"{url}/workflow",

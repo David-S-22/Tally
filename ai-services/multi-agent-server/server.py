@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def create_app(log_dir=None, settings=None, agent_runner=None):
     settings = settings or Settings.from_env()
     app = Flask(__name__)
-    app.config["MAX_CONTENT_LENGTH"] = 96 * 1024
+    app.config["MAX_CONTENT_LENGTH"] = 65536
     app.json.ensure_ascii = False
     runner = agent_runner or Agents(settings)
     coordinator = Coordinator(log_dir, settings, runner)

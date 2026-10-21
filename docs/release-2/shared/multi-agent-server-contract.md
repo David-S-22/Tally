@@ -60,12 +60,12 @@ savings, anomalies, bills, budgets; it does not select server business logic.
 `contract_version` is optional for existing clients and must be `1.0` if sent.
 Task limit: 4,000 characters. Evidence: at most 32 items, unique non-blank
 source IDs (200 characters), non-blank summaries (4,000 characters), optional
-JSON `data`. Context: object, at most 8 KiB. HTTP is limited to 96 KiB and
-validated JSON to 96 KiB, nesting to 12 levels; NaN/infinity are rejected. JSON serialization
+JSON `data`. Context: object, at most 8 KiB. HTTP and validated JSON are limited
+to 64 KiB, nesting to 12 levels; NaN/infinity are rejected. JSON serialization
 overhead counts toward limits.
 
 Combined input for each agent, including earlier agent outputs, is limited to
-64 KiB; exceeding it fails explicitly with `context_limit`, rather than silently
+16 KiB; exceeding it fails explicitly with `context_limit`, rather than silently
 truncating evidence. Keep evidence concise. Role outputs are also bounded by
 schemas and generation limits.
 

@@ -99,8 +99,8 @@ def validate(value, schema):
         encoded = json.dumps(value, allow_nan=False)
     except (ValueError, TypeError, RecursionError):
         raise WorkflowError(400, "A finite JSON value is required") from None
-    if len(encoded.encode("utf-8")) > 96 * 1024:
-        raise WorkflowError(413, "JSON payload exceeds 96 KiB", "payload_too_large")
+    if len(encoded.encode("utf-8")) > 65536:
+        raise WorkflowError(413, "JSON payload exceeds 64 KiB", "payload_too_large")
     stack = [(value, 0)]
     while stack:
         item, depth = stack.pop()

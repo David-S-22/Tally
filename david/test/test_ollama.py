@@ -68,7 +68,7 @@ def test_load_prompt_savings_and_search():
     assert "{background_preferences}" in search
     assert "{valid_categories}" in search
 
-    assert "PLAN" in savings and "ACT" in savings
+    assert "Worker output:" in savings
     assert "Insufficient context to generate savings advice." in savings
 
 

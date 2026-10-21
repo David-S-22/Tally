@@ -386,7 +386,7 @@ def test_build_advice_prompt():
         previous_suggestion="Cut coffee",
     )
     assert 'Previous Suggestion: "Cut coffee"' in prompt_with_prev
-    assert "Do not generate advice similar" in prompt_with_prev
+    assert "Output 1 or 2" not in prompt_with_prev
 
     prompt_without_prev = _build_advice_prompt(
         user_data="UserData",
@@ -396,6 +396,28 @@ def test_build_advice_prompt():
         previous_suggestion=None,
     )
     assert "Previous Suggestion:" not in prompt_without_prev
+
+
+def test_advice_tables_preserve_every_transaction_and_calculated_total():
+    transactions = [
+        {"date": "2026-09-01", "merchant": "Cafe", "description": "Coffee", "amount": "$5.00", "category": "Dining"},
+        {"date": "2026-09-01", "merchant": "Cafe", "description": "Coffee", "amount": "$5.00", "category": "Dining"},
+        {"date": "2026-09-08", "merchant": "Cafe", "description": "Lunch", "amount": "$15.00", "category": "Dining"},
+        {"date": "2026-09-09", "merchant": "Shop", "description": "Groceries", "amount": "$20.00"},
+    ]
+    merchants = [{"merchant": "Cafe", "total_spent": "$25.00", "transaction_count": 3, "category": "Dining"}]
+    prompt = _build_advice_prompt("Goals and preferences", merchants, transactions, "Guidelines with source citations")
+
+    merchant_json = prompt.split("Pre-Calculated Spending Summary by Merchant:\n", 1)[1].split("\n\n", 1)[0]
+    transaction_json = prompt.split("Retrieved Transactions:\n", 1)[1].split("\n\n", 1)[0]
+    merchant_table = json.loads(merchant_json)
+    transaction_table = json.loads(transaction_json)
+    restored_transactions = [dict(zip(transaction_table["columns"], row)) for row in transaction_table["rows"]]
+    assert restored_transactions == [{**tx, "category": tx.get("category", "")} for tx in transactions]
+    assert restored_transactions[0] == restored_transactions[1]
+    assert [dict(zip(merchant_table["columns"], row)) for row in merchant_table["rows"]] == merchants
+    assert "Goals and preferences" in prompt
+    assert "Guidelines with source citations" in prompt
 
 
 # ============================================================================
