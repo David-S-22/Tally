@@ -416,9 +416,10 @@ module modSavingsBackend 'modules/container-app.bicep' = {
       { name: 'OLLAMA_URL', value: '${ollamaUrl}/v1' }
       { name: 'OLLAMA_MODEL', value: 'llama3.1:8b' }
       { name: 'OLLAMA_CLASSIFIER_MODEL', value: 'qwen2.5:3b' }
-      { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
+      { name: 'MCP_ENABLED', value: 'false' }
       { name: 'MCP_SERVER_URL', value: 'http://host.docker.internal:8000/mcp' }
-      { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
+      { name: 'RAG_ENABLED', value: 'false' }
+      { name: 'MULTI_AGENT_ENABLED', value: 'false' }
     ]
   }
   dependsOn: [
