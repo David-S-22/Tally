@@ -1,6 +1,7 @@
 import asyncio
 import json
 import math
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +19,15 @@ from test_server import REQUEST, FakeModel, app_at
 from workflow_runner import main
 
 
+@pytest.mark.parametrize("env, expected_host", [
+    ({"MULTI_AGENT_TOKEN": "a" * 32}, "0.0.0.0"),
+    ({"MULTI_AGENT_HOST": "127.0.0.1"}, "127.0.0.1"),
+])
+def test_runtime_bind_address_defaults_to_all_interfaces_and_can_be_overridden(env, expected_host):
+    with patch.dict(os.environ, env, clear=True):
+        assert Settings.from_env().host == expected_host
+
+
 @pytest.mark.parametrize("probabilities, expected", [
     ([0.95, 0.85], "High"),
     ([0.70], "High"),
@@ -32,7 +42,7 @@ def test_confidence_is_calculated_from_provider_logprobs(probabilities, expected
         logprobs=[{"token": "example", "logprob": math.log(p)} for p in probabilities],
     )
     with patch("ollama.AsyncClient.chat", return_value=response) as chat:
-        content, confidence = Ollama(Settings()).generate("worker", [], {}, time.monotonic() + 2)
+        content, confidence = Ollama(Settings(host="127.0.0.1")).generate("worker", [], {}, time.monotonic() + 2)
     assert content == "{}"
     assert confidence == expected
     assert chat.call_args.kwargs["logprobs"] is True
@@ -107,7 +117,7 @@ def test_repair_and_unknown_citations():
 
     model = Repair()
     assert (
-        Agents(Settings(), model).run("planner", REQUEST, time.monotonic() + 10)[
+        Agents(Settings(host="127.0.0.1"), model).run("planner", REQUEST, time.monotonic() + 10)[
             "status"
         ]
         == "success"
@@ -122,7 +132,7 @@ def test_repair_and_unknown_citations():
             return json.dumps(result), confidence
 
     with pytest.raises(AgentError, match="failed validation"):
-        Agents(Settings(), Invented()).run("planner", REQUEST, time.monotonic() + 10)
+        Agents(Settings(host="127.0.0.1"), Invented()).run("planner", REQUEST, time.monotonic() + 10)
 
 
 @pytest.mark.parametrize("role", ["planner", "worker", "reviewer"])
@@ -147,7 +157,7 @@ def test_generation_schema_constrains_sources_without_mutating_shared_schema(rol
                 assert refs["maxItems"] == 0
             return super().generate(role, messages, schema, deadline)
 
-    agents = Agents(Settings(), Constrained())
+    agents = Agents(Settings(host="127.0.0.1"), Constrained())
     for evidence in ([], REQUEST["evidence"]):
         assert (
             agents.run(role, {**REQUEST, "evidence": evidence}, time.monotonic() + 10)[
@@ -167,7 +177,7 @@ def test_failed_workflow_is_durable_and_only_rejectable(tmp_path, failed_role):
                 raise AgentError("model_timeout", "Model deadline exceeded", "timeout")
             return super().generate(role, *args)
 
-    settings = Settings()
+    settings = Settings(host="127.0.0.1")
     app = create_app(tmp_path, settings, Agents(settings, Failed()))
     client = app.test_client()
     response = client.post("/workflow", json=REQUEST)
@@ -233,7 +243,7 @@ def test_capacity_does_not_block_reads(tmp_path):
                 assert release.wait(10)
             return super().generate(role, *args)
 
-    settings = Settings()
+    settings = Settings(host="127.0.0.1")
     app = create_app(tmp_path, settings, Agents(settings, Blocked()))
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(
@@ -327,7 +337,7 @@ def test_legacy_logs_require_explicit_migration(tmp_path):
 
 
 def test_deadline_and_model_transport_errors():
-    provider = Ollama(Settings())
+    provider = Ollama(Settings(host="127.0.0.1"))
     with pytest.raises(AgentError) as error:
         asyncio.run(provider._request("list", time.monotonic() - 1))
     assert error.value.status == "timeout"
@@ -355,7 +365,7 @@ def test_sdk_uses_native_api_schema_options_and_bounds_responses(monkeypatch):
         return real_client(**kwargs, transport=httpx.MockTransport(respond))
 
     monkeypatch.setattr(ollama, "AsyncClient", factory)
-    provider = Ollama(Settings())
+    provider = Ollama(Settings(host="127.0.0.1"))
     assert (
         provider.generate("planner", [], ROLE_SCHEMAS["planner"], time.monotonic() + 2)
         == ("{}", None)
@@ -394,7 +404,7 @@ def test_sdk_deadline_cancels_slow_response_and_closes_client(monkeypatch):
 
     monkeypatch.setattr(ollama, "AsyncClient", factory)
     with pytest.raises(AgentError) as error:
-        asyncio.run(Ollama(Settings())._request("list", time.monotonic() + 0.02))
+        asyncio.run(Ollama(Settings(host="127.0.0.1"))._request("list", time.monotonic() + 0.02))
     assert error.value.status == "timeout"
     assert clients[0]._client.is_closed
 
@@ -427,7 +437,7 @@ def test_sdk_bounds_streamed_body_and_closes_it(monkeypatch, failure):
         ),
     )
     with pytest.raises(AgentError) as error:
-        asyncio.run(Ollama(Settings())._request("list", time.monotonic() + 0.05))
+        asyncio.run(Ollama(Settings(host="127.0.0.1"))._request("list", time.monotonic() + 0.05))
     assert error.value.code == (
         "model_timeout" if failure == "slow" else "invalid_model_output"
     )
@@ -474,7 +484,7 @@ def test_structured_output_decision(tmp_path):
                 result["structured"] = {"proposal": "example"}
             return json.dumps(result), confidence
 
-    settings = Settings()
+    settings = Settings(host="127.0.0.1")
     client = create_app(
         tmp_path, settings, Agents(settings, Structured())
     ).test_client()
@@ -531,7 +541,7 @@ def test_oversize_stage_input_never_calls_provider():
     model = FakeModel()
     with patch.object(model, "generate") as generate:
         with pytest.raises(AgentError, match="Combined stage input"):
-            Agents(Settings(), model).run(
+            Agents(Settings(host="127.0.0.1"), model).run(
                 "planner",
                 {**REQUEST, "context": {"data": "x" * 17000}},
                 time.monotonic() + 10,

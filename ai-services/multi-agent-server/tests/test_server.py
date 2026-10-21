@@ -54,7 +54,7 @@ class FakeModel:
 
 
 def app_at(directory):
-    settings = Settings()
+    settings = Settings(host="127.0.0.1")
     return create_app(
         log_dir=directory, settings=settings, agent_runner=Agents(settings, FakeModel())
     )

@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 @dataclass(frozen=True)
 class Settings:
-    host: str = "127.0.0.1"
+    host: str = "0.0.0.0"
     port: int = 5010
     token: str = field(default="", repr=False)
     ollama_url: str = "http://localhost:11434"
@@ -64,7 +64,7 @@ class Settings:
     @classmethod
     def from_env(cls):
         return cls(
-            host=os.getenv("MULTI_AGENT_HOST", "127.0.0.1"),
+            host=os.getenv("MULTI_AGENT_HOST", cls.host),
             port=int(os.getenv("MULTI_AGENT_PORT", "5010")),
             token=os.getenv("MULTI_AGENT_TOKEN", ""),
             ollama_url=os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/"),

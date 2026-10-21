@@ -2,11 +2,13 @@ import hmac
 import logging
 import sqlite3
 import uuid
+from pathlib import Path
 
 from agents import Agents
 from contracts import VERSION, WorkflowError
 from coordinator import Coordinator
 from flask import Flask, g, jsonify, request
+from dotenv import load_dotenv
 from settings import Settings
 from storage import InstanceLock
 from werkzeug.exceptions import HTTPException
@@ -121,6 +123,7 @@ def create_app(log_dir=None, settings=None, agent_runner=None):
 
 
 if __name__ == "__main__":
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
     )
