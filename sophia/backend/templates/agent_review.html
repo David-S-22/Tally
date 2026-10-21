@@ -25,7 +25,7 @@
   {% if run.state == "running" %}
     <p class="agent-working">Planner, Worker and Reviewer are working on it — this block updates by itself. You can keep using Tally meanwhile.</p>
   {% elif run.state == "error" %}
-    <p class="suggestion-error">The agents could not run ({{ run.error }}). Nothing was changed.</p>
+    <p class="suggestion-error">The agents could not run: {{ run.error_message }} Nothing was changed.</p>
   {% else %}
     {% set s = run.summary %}
     {% if s.plan %}<details class="agent-plan"><summary>Plan ({{ s.plan|length }} steps)</summary><ol>{% for step in s.plan %}<li>{{ step }}</li>{% endfor %}</ol></details>{% endif %}

@@ -29,7 +29,7 @@ from sophia.backend.ai import agent_tasks, dispute_prompt
 from sophia.backend.clients import bills_db, multi_agent
 from sophia.backend.services import chat as chat_service
 from sophia.backend.services import disputes as disputes_service
-from sophia.backend.services.errors import ModeError, NotFound, ServiceError
+from sophia.backend.services.errors import MODE_MESSAGES, ModeError, NotFound, ServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +117,7 @@ def run_status(run_id):
     elapsed = int((run["finished_at"] or time.time()) - run["started_at"])
     out = {k: run[k] for k in ("run_id", "kind", "subject_id", "state", "workflow_id", "error")}
     out["elapsed_s"] = elapsed
+    out["error_message"] = MODE_MESSAGES.get(run["error"], MODE_MESSAGES["multi_agent_error"]) if run["error"] else None
     out["summary"] = summarise(run["record"]) if run["record"] else None
     return out
 
@@ -175,7 +176,7 @@ def _check_decision(record, decision, corrected_output, reason):
 def decide_dispute_letter(dispute_id, workflow_id, decision, corrected_output=None, reason=None):
     """Record the decision; on Accept or Partially Accept the final letter becomes a new dispute draft."""
     dispute, bill = _dispute_and_bill(dispute_id)
-    record = multi_agent.get_workflow(workflow_id)
+    record = _owned_record(workflow_id, "dispute_letter", dispute_id)
     _check_decision(record, decision, corrected_output, reason)
     if decision != "Reject":
         # The server's final_output is `structured` when the Worker set one, else `output`; a letter
@@ -187,6 +188,7 @@ def decide_dispute_letter(dispute_id, workflow_id, decision, corrected_output=No
         if not isinstance(candidate, str) or not candidate.strip():
             raise ServiceError("There is no letter text to save; reject it or try again")
     record = multi_agent.record_decision(workflow_id, decision, corrected_output=corrected_output, reason=reason, decided_by="bills-ui")
+    _decided(workflow_id, record)
     letter = record["human_decision"].get("final_output")
     if isinstance(letter, str) and letter.strip():
         draft = dispute_prompt.enforce_payment_method_step(
@@ -210,7 +212,7 @@ def decide_chat_suggestion(suggestion_id, workflow_id, decision, corrected_outpu
         raise NotFound("suggestion not found")
     if row["status"] != "pending":
         raise ServiceError(f"This suggestion was already {row['status']}; the agents' decision was not recorded")
-    record = multi_agent.get_workflow(workflow_id)
+    record = _owned_record(workflow_id, "chat_suggestion", suggestion_id)
     _check_decision(record, decision, corrected_output, reason)
     if decision != "Reject":
         proposal = corrected_output if decision == "Partially Accept" else (record.get("worker_result") or {}).get("structured")
@@ -223,6 +225,7 @@ def decide_chat_suggestion(suggestion_id, workflow_id, decision, corrected_outpu
             raise ServiceError(problem)
         vetted = {"op": proposal["op"], "entity": proposal["entity"], "id": proposal.get("id"), "fields": fields}
     record = multi_agent.record_decision(workflow_id, decision, corrected_output=corrected_output, reason=reason, decided_by="bills-ui")
+    _decided(workflow_id, record)
     if decision == "Reject":
         record["applied"] = chat_service.reject_suggestion(suggestion_id)
     else:
@@ -231,6 +234,29 @@ def decide_chat_suggestion(suggestion_id, workflow_id, decision, corrected_outpu
 
 
 # --- helpers -----------------------------------------------------------------
+
+KEEP_DECIDED_RUNS = 20
+
+
+def _owned_record(workflow_id, kind, subject_id):
+    """The server's record for this workflow, only if Bills started it for this dispute or suggestion."""
+    record = multi_agent.get_workflow(workflow_id)
+    key = "dispute_id" if kind == "dispute_letter" else "suggestion_id"
+    if record.get("feature") != "bills" or (record.get("context") or {}).get(key) != subject_id:
+        raise NotFound("workflow not found for this " + key.split("_")[0])
+    return record
+
+
+def _decided(workflow_id, record):
+    """Keep the decided record on its run so the panel stops offering the decision; prune old decided runs."""
+    with _lock:
+        for run in _runs.values():
+            if run["workflow_id"] == workflow_id:
+                run["record"] = record
+        decided = sorted((r for r in _runs.values() if r["record"] and r["record"].get("human_decision", {}).get("decision")),
+                         key=lambda r: r["started_at"])
+        for run in decided[:-KEEP_DECIDED_RUNS]:
+            _runs.pop(run["run_id"], None)
 
 def _dispute_and_bill(dispute_id):
     dispute = bills_db.get_dispute(dispute_id)

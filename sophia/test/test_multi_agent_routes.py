@@ -305,3 +305,29 @@ def test_a_resolved_suggestion_cannot_take_an_agent_decision(world):
     refused = world.client.post(f"/api/chat/suggestions/{row['id']}/workflow/{wid}/decision", json={"decision": "Accept"})
     assert refused.status_code == 400 and "already rejected" in json.loads(refused.data)["error"]
     assert not any(path == f"/workflow/{wid}/decision" for _, path, _ in world.posted)
+
+
+def test_a_workflow_started_for_one_dispute_cannot_be_decided_on_another(world):
+    status = _start_letter(world, dispute_id=1)
+    wid = status["workflow_id"]
+    before = len(bills_db.list_dispute_drafts(2))
+    crossed = world.client.post(f"/api/disputes/2/workflow/{wid}/decision", json={"decision": "Accept"})
+    assert crossed.status_code == 404
+    assert not any(path == f"/workflow/{wid}/decision" for _, path, _ in world.posted)
+    assert len(bills_db.list_dispute_drafts(2)) == before
+    # and a suggestion route cannot adopt a dispute's workflow either
+    row = bills_db.create_suggestion({"op": "update", "entity": "bill", "entity_id": 3, "payload_json": "{}", "message_id": None})
+    assert world.client.post(f"/api/chat/suggestions/{row['id']}/workflow/{wid}/decision", json={"decision": "Reject"}).status_code == 404
+    assert bills_db.get_suggestion(row["id"])["status"] == "pending"
+
+
+def test_after_a_dispute_decision_the_panel_shows_the_draft_not_the_form(world):
+    status = _start_letter(world)
+    wid, run_id = status["workflow_id"], status["run_id"]
+    assert world.client.post(f"/api/disputes/1/workflow/{wid}/decision", json={"decision": "Accept"}).status_code == 200
+    after = json.loads(world.client.get(f"/api/workflow-runs/{run_id}").data)
+    assert after["summary"]["decision"] == "Accept"
+    panel = world.client.get("/ui/disputes?dispute_id=1").data.decode()
+    assert 'name="decision"' not in panel and "Draft with agents" in panel
+    second = world.client.post(f"/api/disputes/1/workflow/{wid}/decision", json={"decision": "Reject"})
+    assert second.status_code != 200 and len(bills_db.list_dispute_drafts(1)) == len(bills_db.list_dispute_drafts(1))
