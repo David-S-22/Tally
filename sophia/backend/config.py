@@ -59,4 +59,3 @@ MULTI_AGENT_SERVER_URL = os.environ.get("MULTI_AGENT_SERVER_URL", "http://host.d
 MULTI_AGENT_TOKEN = os.environ.get("MULTI_AGENT_TOKEN", "").strip()  # bearer token the server requires when bound off loopback
 # The server's model deadline is 540 s (three steps at 180 s); the caller must outlive it.
 MULTI_AGENT_TIMEOUT_SECONDS = float(os.environ.get("MULTI_AGENT_TIMEOUT_SECONDS", "600"))
-MULTI_AGENT_POLL_SECONDS = float(os.environ.get("MULTI_AGENT_POLL_SECONDS", "2"))

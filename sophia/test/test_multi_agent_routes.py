@@ -31,6 +31,7 @@ class BillsModel:
 
     def __init__(self, verdict="approve", structured=None, fail_role=None):
         self.verdict, self.structured, self.fail_role = verdict, structured, fail_role
+        self.structured_on_letters = False  # a worker that drifts into JSON on a letter task
 
     def generate(self, role, messages, schema, deadline):
         if role == self.fail_role:
@@ -40,7 +41,7 @@ class BillsModel:
         letter_task = payload["task"].startswith("Draft a dispute letter")
         results = {
             "planner": {"plan": ["Read the evidence", "Produce the output"], "required_evidence": sources, "missing_information": [], "completion_criteria": ["Supported by evidence"]},
-            "worker": {"output": LETTER if letter_task else "Ends Spotify after 16 Sep.", "structured": None if letter_task else self.structured, "evidence_used": sources, "limitations": []},
+            "worker": {"output": LETTER if letter_task else "Ends Spotify after 16 Sep.", "structured": self.structured if (self.structured_on_letters or not letter_task) else None, "evidence_used": sources, "limitations": []},
             "reviewer": {"verdict": self.verdict, "risks": [] if self.verdict == "approve" else ["The refund timeframe is not in the evidence"], "recommendations": [], "review": "Checked.", "evidence_used": sources},
         }
         return json.dumps(results[role]), "High"  # (content, confidence) since #222
@@ -261,3 +262,46 @@ def test_a_chat_proposal_through_ui_chat_starts_the_agents_with_the_bills_as_evi
     assert len(started) == 1
     assert any(e["source"] == "bills-db:bill:3" and "Spotify" in e["summary"] for e in started[0]["evidence"])
     assert 'id="agent-review-chat_suggestion-' in _text(world.client.get("/ui/suggestions"))
+
+
+# --- review fixes: runs that never started, decisions that cannot be applied ------------
+
+def test_an_errored_run_hands_the_suggestion_back_to_the_r1_card(world, monkeypatch):
+    """Server down (or busy, or timed out): the R1 Approve/Reject buttons must come back, not an empty block."""
+    def down(method, url, json=None, headers=None, timeout=None):
+        raise __import__("requests").ConnectionError("no server")
+
+    monkeypatch.setattr(multi_agent.requests, "request", down)
+    row = bills_db.create_suggestion({"op": "update", "entity": "bill", "entity_id": 3, "payload_json": json.dumps({"end_date": "2026-09-16"}), "message_id": None})
+    run_id = multi_agent_service.start_chat_suggestion(row["id"], "cancel spotify", {"op": "update", "entity": "bill", "id": 3, "fields": {"end_date": "2026-09-16"}}, [])
+    assert multi_agent_service.run_status(run_id)["state"] == "error"
+    panel = _text(world.client.get("/ui/suggestions"))
+    assert f"/ui/suggestions/{row['id']}/approve" in panel and f"/ui/suggestions/{row['id']}/reject" in panel
+    assert 'id="agent-review-chat_suggestion-' not in panel
+    bills_db.update_suggestion(row["id"], {"status": "rejected"})
+
+
+def test_a_dispute_accept_without_letter_text_is_refused_before_the_server_commits(world):
+    world.model.structured, world.model.structured_on_letters = {"op": "update"}, True
+    status = _start_letter(world)
+    wid = status["workflow_id"]
+    before = len(bills_db.list_dispute_drafts(1))
+    refused = world.client.post(f"/api/disputes/1/workflow/{wid}/decision", json={"decision": "Accept"})
+    assert refused.status_code == 400 and "structured" in json.loads(refused.data)["error"]
+    assert not any(path == f"/workflow/{wid}/decision" for _, path, _ in world.posted)  # not committed
+    assert len(bills_db.list_dispute_drafts(1)) == before
+    partial = world.client.post(f"/api/disputes/1/workflow/{wid}/decision", json={"decision": "Partially Accept", "corrected_output": "Dear Spotify, my own words.", "reason": "wrote it myself"})
+    assert partial.status_code == 400  # the server would refuse a text correction of an object anyway (contract 1.0)
+    ok = world.client.post(f"/api/disputes/1/workflow/{wid}/decision", json={"decision": "Reject", "reason": "not a letter"})
+    assert ok.status_code == 200 and len(bills_db.list_dispute_drafts(1)) == before
+
+
+def test_a_resolved_suggestion_cannot_take_an_agent_decision(world):
+    world.model.structured = {"op": "update", "entity": "bill", "id": 3, "fields": {"end_date": "2026-09-16"}}
+    row = bills_db.create_suggestion({"op": "update", "entity": "bill", "entity_id": 3, "payload_json": "{}", "message_id": None})
+    run_id = multi_agent_service.start_chat_suggestion(row["id"], "cancel spotify", {"op": "update", "entity": "bill", "id": 3, "fields": {}}, [])
+    wid = multi_agent_service.run_status(run_id)["workflow_id"]
+    bills_db.update_suggestion(row["id"], {"status": "rejected"})  # resolved elsewhere (the R1 card, another tab)
+    refused = world.client.post(f"/api/chat/suggestions/{row['id']}/workflow/{wid}/decision", json={"decision": "Accept"})
+    assert refused.status_code == 400 and "already rejected" in json.loads(refused.data)["error"]
+    assert not any(path == f"/workflow/{wid}/decision" for _, path, _ in world.posted)

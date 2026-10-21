@@ -796,6 +796,8 @@ def _agent_run_view(kind, subject_id):
     view = multi_agent_service.run_status(run["run_id"])
     if view["summary"] and view["summary"]["decision"]:
         return None  # decided runs are history; the stored draft or applied change shows instead
+    if view["state"] == "error":
+        return None  # the agents never ran (server down, busy, timeout): the R1 card and its buttons come back
     return view
 
 

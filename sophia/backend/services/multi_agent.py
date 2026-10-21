@@ -177,6 +177,15 @@ def decide_dispute_letter(dispute_id, workflow_id, decision, corrected_output=No
     dispute, bill = _dispute_and_bill(dispute_id)
     record = multi_agent.get_workflow(workflow_id)
     _check_decision(record, decision, corrected_output, reason)
+    if decision != "Reject":
+        # The server's final_output is `structured` when the Worker set one, else `output`; a letter
+        # must be text. Refuse before the decision is committed (it can be recorded only once).
+        candidate = corrected_output if decision == "Partially Accept" else (record.get("worker_result") or {}).get("output")
+        if (record.get("worker_result") or {}).get("structured") is not None:
+            # The server only accepts a correction of the same type as the original (contract 1.0).
+            raise ServiceError("The agents returned a structured object, not a letter; reject it and try again")
+        if not isinstance(candidate, str) or not candidate.strip():
+            raise ServiceError("There is no letter text to save; reject it or try again")
     record = multi_agent.record_decision(workflow_id, decision, corrected_output=corrected_output, reason=reason, decided_by="bills-ui")
     letter = record["human_decision"].get("final_output")
     if isinstance(letter, str) and letter.strip():
@@ -199,6 +208,8 @@ def decide_chat_suggestion(suggestion_id, workflow_id, decision, corrected_outpu
     row = bills_db.get_suggestion(suggestion_id)
     if row is None:
         raise NotFound("suggestion not found")
+    if row["status"] != "pending":
+        raise ServiceError(f"This suggestion was already {row['status']}; the agents' decision was not recorded")
     record = multi_agent.get_workflow(workflow_id)
     _check_decision(record, decision, corrected_output, reason)
     if decision != "Reject":
