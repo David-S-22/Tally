@@ -397,6 +397,14 @@ def test_build_advice_prompt():
     )
     assert "Previous Suggestion:" not in prompt_without_prev
 
+    prompt_without_rag = _build_advice_prompt(
+        user_data="UserData",
+        spending_summary=[],
+        formatted_transactions=[],
+        rag_context_blocks=None,
+    )
+    assert "Retrieved Savings Advice Guidelines" not in prompt_without_rag
+
 
 def test_advice_tables_preserve_every_transaction_and_calculated_total():
     transactions = [

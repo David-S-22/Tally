@@ -6,10 +6,15 @@ from typing import Any
 from shared.backend import dto
 from .helpers import fetch_categories, fetch_feedbacks, fetch_goals, fetch_suggestions
 from .ollama_service import (
+    MCP_ENABLED,
+    MULTI_AGENT_ENABLED,
+    RAG_ENABLED,
     call_ai_to_select_tool,
     execute_mcp_tool,
     fetch_mcp_tools,
+    get_ai_text_and_calculate_confidence,
     load_prompt,
+    planner_model,
     search_model,
 )
 
@@ -289,6 +294,18 @@ def _fetch_filtered_transactions(
     Executes transaction search tool call derived from user feedbacks.
     Returns (transactions, None) on success, or (None, fallback_message) if no transactions exist.
     """
+    if not MCP_ENABLED:
+        url = (tx_url or os.environ.get("TRANSACTIONS_DB_URL", "http://localhost:6001")).rstrip("/")
+        try:
+            response = requests.get(f"{url}/transactions", timeout=5)
+            response.raise_for_status()
+            transactions = response.json()
+            if isinstance(transactions, list) and transactions:
+                return transactions, None
+        except (requests.RequestException, ValueError):
+            pass
+        return None, "You don't have any transactions yet. Add transactions using the transactions tab."
+
     tool_name, search_args = generate_transaction_search_tool_call(feedbacks, tx_url=tx_url)
     transactions = execute_mcp_tool(tool_name, search_args)
     if not transactions:
@@ -323,6 +340,9 @@ def _fetch_rag_guidelines(
     Retrieves savings advice guidelines from the RAG knowledge base via MCP retrieve_context.
     Returns (context_blocks, sources_str) if sufficient context exists, otherwise None.
     """
+    if not MCP_ENABLED or not RAG_ENABLED:
+        return None
+
     rag_args = generate_context_retrieval_args(goals)
     try:
         rag_response = execute_mcp_tool("retrieve_context", rag_args)
@@ -348,7 +368,7 @@ def _build_advice_prompt(
     user_data: str,
     spending_summary: list[dict[str, Any]],
     formatted_transactions: list[dict[str, str]],
-    rag_context_blocks: str,
+    rag_context_blocks: str | None,
     previous_suggestion: str | None = None,
 ) -> str:
     """Keep every transaction in compact tables, with advice rules in the task."""
@@ -368,17 +388,28 @@ def _build_advice_prompt(
         "columns": transaction_columns,
         "rows": [[tx.get(column, "") for column in transaction_columns] for tx in formatted_transactions],
     }
-    return (
+    prompt = (
         f"{user_data}\n\n"
         f"{previous_block}"
         f"Pre-Calculated Spending Summary by Merchant:\n{json.dumps(merchant_table, separators=(',', ':'))}\n\n"
-        f"Retrieved Transactions:\n{json.dumps(transaction_table, separators=(',', ':'))}\n\n"
-        f"Retrieved Savings Advice Guidelines:\n{rag_context_blocks}"
+        f"Retrieved Transactions:\n{json.dumps(transaction_table, separators=(',', ':'))}"
     )
+    if rag_context_blocks:
+        prompt += f"\n\nRetrieved Savings Advice Guidelines:\n{rag_context_blocks}"
+    return prompt
 
 
-def generate_savings_suggestion(user_prompt: str, system_prompt: str) -> tuple[str, str, dict[str, Any]]:
-    """Send the gathered savings evidence through Planner, Worker and Reviewer."""
+def generate_savings_suggestion(user_prompt: str, system_prompt: str) -> tuple[str, str, dict[str, Any] | None]:
+    """Generate savings advice with Ollama directly or through the multi-agent workflow."""
+    if not MULTI_AGENT_ENABLED:
+        advice, confidence = get_ai_text_and_calculate_confidence(
+            user_prompt,
+            planner_model,
+            0.6,
+            system_prompt=system_prompt,
+        )
+        return advice, confidence, None
+
     url = os.environ.get("MULTI_AGENT_URL", "http://localhost:5010").rstrip("/")
     token = os.environ.get("MULTI_AGENT_TOKEN", "")
     payload = {
@@ -440,9 +471,9 @@ def generate_advice(
     spending_summary = _aggregate_spending_by_merchant(transactions, category_map)
 
     rag_guidelines = _fetch_rag_guidelines(goals)
-    if not rag_guidelines:
+    if MCP_ENABLED and RAG_ENABLED and not rag_guidelines:
         return "Insufficient context available to generate savings advice.", None, None, None
-    rag_context_blocks, sources_str = rag_guidelines
+    rag_context_blocks, sources_str = rag_guidelines if rag_guidelines else (None, None)
 
     user_data = format_planner_prompt(goals, suggestions, feedbacks, tx_url=tx_url)
     system_prompt = load_prompt("savings_prompt.txt")
