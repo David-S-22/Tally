@@ -1,0 +1,92 @@
+{% autoescape true %}
+{% set base = "/transactions-backend/ui/agent-review/" ~ run.id %}
+{% set workflow = run.workflow or {} %}
+{% set worker = workflow.worker_result or {} %}
+{% set reviewer = workflow.reviewer_result or {} %}
+{% set names = run.category_names %}
+<div id="agent-review-panel"
+     class="transaction-chat-response-card"
+     {% if run.status == "running" %}
+     hx-get="{{ base }}"
+     hx-trigger="every 3s"
+     hx-swap="outerHTML"
+     {% endif %}>
+    <h2>Suggest category: {{ run.transaction.merchant }} ({{ run.transaction.amount|currency }})</h2>
+
+    {% if run.status == "running" %}
+    <p class="transaction-chat-status">Agents working. Planner, Worker and Reviewer can take a few minutes.</p>
+    {% elif run.status in ("failed", "unknown") %}
+    <p class="transaction-chat-insufficient">{{ run.error }}</p>
+    {% else %}
+    {% if workflow.status == "error" %}
+    <p class="transaction-chat-insufficient">The agents could not finish. Only rejection is possible.</p>
+    {% endif %}
+
+    <section class="transaction-chat-category">
+        {% if suggested_id %}
+        <p><strong>{{ names[suggested_id] }}</strong> looks like the best fit.
+            {% if worker.confidence %}
+            <span class="transaction-chat-confidence {{ worker.confidence|lower }}">{{ worker.confidence|upper }} confidence</span>
+            {% endif %}
+        </p>
+        {% if worker.structured.reason %}<p>{{ worker.structured.reason }}</p>{% endif %}
+        {% elif worker.status == "success" %}
+        <p class="transaction-chat-insufficient">The agents could not suggest a category from this evidence.</p>
+        {% endif %}
+        {% if reviewer.verdict and reviewer.verdict != "approve" %}
+        <p>Reviewer verdict: {{ reviewer.verdict }}.{% if reviewer.risks %} Risks: {{ reviewer.risks|join("; ") }}{% endif %}</p>
+        {% endif %}
+    </section>
+
+    {% if workflow.evidence %}
+    <p class="transaction-chat-citations-label">Sources:</p>
+    <ul class="transaction-chat-citations">
+        {% for item in workflow.evidence %}
+        <li>[{{ item.source }}] {{ item.summary }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% set unavailable = (workflow.context or {}).get("unavailable_sources") %}
+    {% if unavailable %}
+    <p class="transaction-chat-status">Not available for this run: {{ unavailable|join(", ") }}</p>
+    {% endif %}
+
+
+    {% if error %}
+    <p class="transaction-notice transaction-notice-error" role="alert">{{ error }}</p>
+    {% endif %}
+    {% if message %}
+    <p class="transaction-notice" role="status">{{ message }}</p>
+    {% endif %}
+    {% if run.decision %}
+    <p><strong>Decision: {{ run.decision.decision }}</strong>{% if run.decision.reason %} ({{ run.decision.reason }}){% endif %}</p>
+    {% else %}
+    {% set needs_reason = reviewer.verdict != "approve" %}
+    <form class="transaction-chat-category-form"
+          hx-post="{{ base }}/decision"
+          hx-target="#agent-review-panel"
+          hx-swap="outerHTML"
+          hx-disabled-elt="button"
+          hx-on::response-error="document.getElementById('agent-review').innerHTML = event.detail.xhr.responseText">
+        {% set can_correct = workflow.status != "error" and worker.structured is mapping %}
+        {% if can_correct %}
+        <label for="agent-review-category">Category</label>
+        <select id="agent-review-category" name="category_id">
+            {% for category in run.categories %}
+            <option value="{{ category.id }}"{% if category.id == suggested_id %} selected{% endif %}>{{ category.name }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+        {% if can_correct %}
+        <label for="agent-review-reason">Reason{% if needs_reason %} (required: the Reviewer did not approve this suggestion){% endif %}</label>
+        <input id="agent-review-reason" type="text" name="reason" maxlength="500" autocomplete="off"{% if needs_reason %} required{% endif %}>
+        {% endif %}
+        {% if can_correct %}
+        <button type="submit" name="decision" value="Accept">Accept</button>
+        {% endif %}
+        <button type="submit" name="decision" value="Reject" class="danger-action-button" formnovalidate>Reject</button>
+    </form>
+    {% endif %}
+    {% endif %}
+</div>
+{% endautoescape %}

@@ -82,6 +82,17 @@ RAG_REFRESH_ON_START = _environment_flag("RAG_REFRESH_ON_START", True)
 RAG_REFRESH_AFTER_WRITE = _environment_flag("RAG_REFRESH_AFTER_WRITE", True)
 RAG_MODEL = os.environ.get("RAG_MODEL", "qwen2.5:3b")
 
+# Multi-Agent mode
+MULTI_AGENT_ENABLED = _environment_flag("MULTI_AGENT_ENABLED", False)
+MULTI_AGENT_SERVER_URL = os.environ.get(
+    "MULTI_AGENT_SERVER_URL",
+    "http://host.docker.internal:5010",
+).rstrip("/")
+MULTI_AGENT_TOKEN = os.environ.get("MULTI_AGENT_TOKEN", "")
+MULTI_AGENT_TIMEOUT_SECONDS = float(
+    os.environ.get("MULTI_AGENT_TIMEOUT_SECONDS", "600")
+)
+
 _RAG_THRESHOLD_DEFAULTS = (0.6, 0.9, 1.2)
 
 

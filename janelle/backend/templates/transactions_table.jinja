@@ -38,6 +38,20 @@
                     <td>{{ "%.2f"|format(transaction.get("amount")) }}</td>
                     <td>{{ transaction.get("category_name") or transaction.get("category_id") or "Uncategorised" }}</td>
                     <td class="transactions-actions-cell">
+                        {% set category_name = transaction.get("category_name") %}
+                        {% if multi_agent_enabled and transaction.get("id") is not none
+                              and (not category_name or category_name|lower == "uncategorised") %}
+                        <button type="button"
+                                class="table-action-button"
+                                aria-label="Suggest a category for the transaction at {{ transaction.get('merchant', '') }} on {{ transaction.get('date', '')[:16] }}"
+                                hx-post="/transactions-backend/ui/transactions/{{ transaction.get('id') }}/agent-review"
+                                hx-target="#agent-review"
+                                hx-swap="innerHTML"
+                                hx-on::response-error="document.getElementById('agent-review').innerHTML = event.detail.xhr.responseText"
+                                hx-disabled-elt="this">
+                            Suggest category
+                        </button>
+                        {% endif %}
                         {% if transaction.get("id") is not none %}
                         <button type="button"
                                 class="table-action-button danger-action-button"
