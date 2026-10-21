@@ -64,9 +64,9 @@ param enableRag bool = true
 @minLength(32)
 param multiAgentToken string
 param enableMultiAgent bool = true
-param mcpUrl string = 'http://tally-mcp.${location}.cloudapp.azure.com:8000/mcp'
-param ragUrl string = 'http://tally-rag.${location}.cloudapp.azure.com:5003'
-param multiAgentUrl string = 'http://tally-multi-agent.${location}.cloudapp.azure.com:5010'
+param mcpUrl string = 'http://tally-ai.${location}.cloudapp.azure.com:8000/mcp'
+param ragUrl string = 'http://tally-ai.${location}.cloudapp.azure.com:5003'
+param multiAgentUrl string = 'http://tally-ai.${location}.cloudapp.azure.com:5010'
 
 // ==============================================================================
 // 1. Base Infrastructure: Container Registry & Log Analytics

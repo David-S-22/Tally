@@ -1,7 +1,7 @@
 // Reusable native Python host. Git updates are triggered by the deployment workflow.
 param location string = resourceGroup().location
 param vmName string
-param vmSize string = 'Standard_B2ats_v2'
+param vmSize string = 'Standard_B2as_v2'
 param adminUsername string = 'azureuser'
 @minLength(1)
 param adminPublicKey string
@@ -9,8 +9,7 @@ param osDiskSizeGB int = 32
 param autoShutdownTime string = '0000'
 param autoShutdownTimeZone string = 'AUS Eastern Standard Time'
 param dnsLabel string
-param servicePort int
-param serviceName string
+param services array
 @secure()
 param serviceEnvironment string
 
@@ -42,7 +41,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
           sourceAddressPrefix: '*'
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
-          destinationPortRange: string(servicePort)
+          destinationPortRanges: [for service in services: string(service.port)]
         }
       }
     ]
@@ -178,10 +177,14 @@ cat > /etc/tally.env <<'TALLY_ENV'
 {0}
 TALLY_ENV
 umask 022
-bash -s -- {1} setup <<'TALLY_SCRIPT'
+cat > /usr/local/bin/tally-ai-service <<'TALLY_SCRIPT'
 {2}
 TALLY_SCRIPT
-''', serviceEnvironment, serviceName, loadTextContent('../../scripts/ai-service.sh'))
+chmod 755 /usr/local/bin/tally-ai-service
+for service in {1}; do
+  /usr/local/bin/tally-ai-service "$service" setup
+done
+''', serviceEnvironment, join(map(services, service => service.name), ' '), loadTextContent('../../scripts/ai-service.sh'))
 
 // Protected settings keep the service token out of deployment outputs.
 resource install 'Microsoft.Compute/virtualMachines/extensions@2024-03-01' = {

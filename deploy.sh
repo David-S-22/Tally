@@ -6,6 +6,8 @@ ACR_NAME="tallyasd21"
 RESOURCE_GROUP="ASD-GROUP-21"
 LOGIN_SERVER="${ACR_NAME}.azurecr.io"
 VM_NAME="vm-tally-ollama"
+AI_VM_NAME="vm-tally-ai"
+AI_DNS_NAME="tally-ai.australiaeast.cloudapp.azure.com"
 DNS_NAME="tally-ollama.australiaeast.cloudapp.azure.com"
 OLLAMA_PORT="11434"
 OLLAMA_URL="http://${DNS_NAME}:${OLLAMA_PORT}"
@@ -183,7 +185,7 @@ check_ai_endpoint() {
         multi-agent) endpoint=5010/health; expected='^401$' ;; # Requires authentication.
     esac
     code=$(curl -sS --retry 12 --retry-connrefused --retry-delay 5 --max-time 30 \
-        -o /dev/null -w '%{http_code}' "http://tally-$service.australiaeast.cloudapp.azure.com:$endpoint")
+        -o /dev/null -w '%{http_code}' "http://$AI_DNS_NAME:$endpoint")
     [[ "$code" =~ $expected ]] || { echo "$service endpoint failed: HTTP $code" >&2; return 1; }
 }
 
@@ -195,9 +197,9 @@ case "$TARGET" in
         [ "$#" -gt 0 ] || set -- rag mcp multi-agent
         for service in "$@"; do
             case "$service" in mcp|rag|multi-agent) ;; *) echo "Unknown service: $service" >&2; exit 1 ;; esac
-            az vm start -g "$RESOURCE_GROUP" -n "vm-tally-$service" --output none
+            az vm start -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" --output none
             # Azure Run Command can return success even when the script fails.
-            result=$(az vm run-command invoke -g "$RESOURCE_GROUP" -n "vm-tally-$service" \
+            result=$(az vm run-command invoke -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" \
                 --command-id RunShellScript \
                 --scripts "/usr/local/bin/tally-ai-service $service && echo TALLY_UPDATE_OK" \
                 --query 'value[0].message' -o tsv)
@@ -235,11 +237,11 @@ case "$TARGET" in
         echo "Usage: ./deploy.sh [all | containers | update | vm | health | ai-vms | ai-update]"
         echo ""
         echo "Options:"
-        echo "  all         Deploy Ollama, containers and all three AI VMs (default)"
+        echo "  all         Deploy Ollama, containers and the shared AI VM (default)"
         echo "  containers  Deploy microservice containers via Bicep (skip VM)"
         echo "  update      Fast update: rebuild, push, then update apps four at a time (skips Bicep)"
         echo "  vm          Deploy Ollama VM only and wait for health check"
-        echo "  ai-vms      Provision and deploy all three native Python VMs"
+        echo "  ai-vms      Provision the shared VM for all three Python services"
         echo "  ai-update   Update Python services; optionally append mcp, rag, multi-agent"
         echo "  health      Check current health and models of the Ollama VM"
         exit 1
