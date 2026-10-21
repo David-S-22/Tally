@@ -35,6 +35,8 @@ fi
 
 cd /opt/tally/repo
 git pull --ff-only origin main
+cp -f /opt/tally/repo/scripts/ai-service.sh /usr/local/bin/tally-ai-service 2>/dev/null || true
+chmod 755 /usr/local/bin/tally-ai-service 2>/dev/null || true
 if [ "$mode" = setup ]; then
     systemctl enable "tally-$service"
     if [ "$service" = rag ] && [ ! -e ai-services/rag-server/chroma ]; then
