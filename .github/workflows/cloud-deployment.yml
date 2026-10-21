@@ -70,7 +70,7 @@ jobs:
           REQUESTED_TARGET: ${{ inputs.target || 'auto' }}
           BEFORE_SHA: ${{ github.event.before }}
           MULTI_AGENT_TOKEN: ${{ secrets.MULTI_AGENT_TOKEN }}
-          AI_VM_SSH_PUBLIC_KEY: ${{ vars.AI_VM_SSH_PUBLIC_KEY }}
+          AI_VM_SSH_PUBLIC_KEY: ${{ secrets.AI_VM_SSH_PUBLIC_KEY }}
         shell: bash
         run: |
           set -euo pipefail
