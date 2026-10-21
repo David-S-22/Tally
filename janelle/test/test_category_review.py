@@ -281,6 +281,9 @@ def test_accept_of_unapproved_verdict_needs_a_reason(client, database, server):
     )
     assert response.status_code == 422
     assert not server["record_decision"].called
+    assert "Give a reason" in response.text
+    assert 'name="reason" maxlength="500" autocomplete="off" required' in response.text
+    assert "formnovalidate" in response.text
 
 
 def test_accepting_another_category_is_a_partial_accept_with_a_reason(client, database, server):

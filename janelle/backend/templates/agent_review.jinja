@@ -13,13 +13,6 @@
      {% endif %}>
     <h2>Suggest category: {{ run.transaction.merchant }} ({{ run.transaction.amount|currency }})</h2>
 
-    {% if error %}
-    <p class="transaction-notice transaction-notice-error" role="alert">{{ error }}</p>
-    {% endif %}
-    {% if message %}
-    <p class="transaction-notice" role="status">{{ message }}</p>
-    {% endif %}
-
     {% if run.status == "running" %}
     <p class="transaction-chat-status">Agents working. Planner, Worker and Reviewer can take a few minutes.</p>
     {% elif run.status in ("failed", "unknown") %}
@@ -59,9 +52,16 @@
     {% endif %}
 
 
+    {% if error %}
+    <p class="transaction-notice transaction-notice-error" role="alert">{{ error }}</p>
+    {% endif %}
+    {% if message %}
+    <p class="transaction-notice" role="status">{{ message }}</p>
+    {% endif %}
     {% if run.decision %}
     <p><strong>Decision: {{ run.decision.decision }}</strong>{% if run.decision.reason %} ({{ run.decision.reason }}){% endif %}</p>
     {% else %}
+    {% set needs_reason = reviewer.verdict != "approve" %}
     <form class="transaction-chat-category-form"
           hx-post="{{ base }}/decision"
           hx-target="#agent-review-panel"
@@ -78,13 +78,13 @@
         </select>
         {% endif %}
         {% if can_correct %}
-        <label for="agent-review-reason">Reason</label>
-        <input id="agent-review-reason" type="text" name="reason" maxlength="500" autocomplete="off">
+        <label for="agent-review-reason">Reason{% if needs_reason %} (required: the Reviewer did not approve this suggestion){% endif %}</label>
+        <input id="agent-review-reason" type="text" name="reason" maxlength="500" autocomplete="off"{% if needs_reason %} required{% endif %}>
         {% endif %}
         {% if can_correct %}
         <button type="submit" name="decision" value="Accept">Accept</button>
         {% endif %}
-        <button type="submit" name="decision" value="Reject" class="danger-action-button">Reject</button>
+        <button type="submit" name="decision" value="Reject" class="danger-action-button" formnovalidate>Reject</button>
     </form>
     {% endif %}
     {% endif %}
