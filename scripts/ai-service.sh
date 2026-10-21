@@ -33,7 +33,13 @@ fi
 
 cd /opt/tally/repo
 git pull --ff-only origin main
-install -m 755 scripts/ai-service.sh /usr/local/bin/tally-ai-service
+if [ "$mode" = setup ]; then
+    install -m 755 scripts/ai-service.sh /usr/local/bin/tally-ai-service
+    systemctl enable "tally-$service"
+    if [ "$service" = rag ] && [ ! -e ai-services/rag-server/chroma ]; then
+        ln -s /var/lib/tally/chroma ai-services/rag-server/chroma
+    fi
+fi
 revision=$(git rev-parse HEAD)
 previous=$(cat /var/lib/tally/deployed-revision 2>/dev/null || true)
 paths=("ai-services/$service-server" scripts/ai-service.sh)
@@ -50,10 +56,6 @@ if [ -z "$previous" ] || ! git diff --quiet "$previous" "$revision" -- "$require
     /opt/tally-venv/bin/pip install -r "$requirements"
     /opt/tally-venv/bin/pip check
 fi
-if [ "$service" = rag ] && [ ! -e ai-services/rag-server/chroma ]; then
-    ln -s /var/lib/tally/chroma ai-services/rag-server/chroma
-fi
-systemctl enable "tally-$service"
 systemctl restart "tally-$service"
 systemctl is-active --quiet "tally-$service"
 # Record success only after installation/restart, so rerunning a failed deployment retries it.

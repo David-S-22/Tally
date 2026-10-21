@@ -81,27 +81,25 @@ jobs:
           # github.event.before covers every commit in a push, including merged branches.
           if [ -z "$BEFORE_SHA" ] || ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
             CHANGED=$(git ls-files)
-            FULL=true
           else
             CHANGED=$(git diff --name-only "$BEFORE_SHA" HEAD)
-            FULL=false
           fi
-          if [ "$FULL" = true ] || grep -Eq '^(bicep/|scripts/|deploy\.sh|\.github/workflows/cloud-deployment\.yml)' <<< "$CHANGED"; then
+
+          if grep -Eq '^(bicep/|scripts/|deploy\.sh|\.github/workflows/cloud-deployment\.yml)' <<< "$CHANGED"; then
             bash ./deploy.sh containers
             bash ./deploy.sh ai-vms
-          else
-            if grep -Eq '^(aiden/|david/|ethan/|janelle/|sophia/|shared/|\.dockerignore)' <<< "$CHANGED"; then
-              bash ./deploy.sh update
-            fi
-            SERVICES=()
-            for service in rag mcp multi-agent; do
-              if grep -q "^ai-services/$service-server/" <<< "$CHANGED"; then
-                SERVICES+=("$service")
-              elif [ "$service" = multi-agent ] && grep -q '^prompts/multi_agent/' <<< "$CHANGED"; then
-                SERVICES+=("$service")
-              fi
-            done
-            if [ "${#SERVICES[@]}" -gt 0 ]; then
-              bash ./deploy.sh ai-update "${SERVICES[@]}"
-            fi
+            exit 0
+          fi
+
+          if grep -Eq '^(aiden/|david/|ethan/|janelle/|sophia/|shared/|\.dockerignore)' <<< "$CHANGED"; then
+            bash ./deploy.sh update
+          fi
+          if grep -q '^ai-services/mcp-server/' <<< "$CHANGED"; then
+            bash ./deploy.sh ai-update mcp
+          fi
+          if grep -q '^ai-services/rag-server/' <<< "$CHANGED"; then
+            bash ./deploy.sh ai-update rag
+          fi
+          if grep -Eq '^(ai-services/multi-agent-server/|prompts/multi_agent/)' <<< "$CHANGED"; then
+            bash ./deploy.sh ai-update multi-agent
           fi
