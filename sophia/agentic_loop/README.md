@@ -120,11 +120,12 @@ ollama ps` is the matching check from the container's side.
 ## Tests
 
 `test_loop_collect.py`, `test_loop_record.py` and `test_loop_endpoint.py` under
-`sophia/test/` cover the deterministic parts: host-port parsing in all three
+`sophia/agentic_loop/tests/` cover the deterministic parts: host-port parsing in all three
 compose forms, the architecture collector against a fixture repository, the
 workflow parser, the record writer including the environment block, and the
 endpoint fingerprint with `requests.get` replaced. No model calls, no sockets,
-no Docker — they run in CI with the rest of the Bills suite.
+no Docker — they run in Sophia-CI's own `agentic-loop` job, apart from the Bills
+suite (`python -m pytest sophia/agentic_loop/tests -q`).
 
 ## Adding a mode
 

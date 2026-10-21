@@ -46,7 +46,13 @@ def cases():
         message = entry["message"]
         variants = {"faithful": FAITHFUL[message]} if message in FAITHFUL else ADVERSARIAL
         for name, reply in variants.items():
-            yield pytest.param(entry, reply, id=f"{message[:42]} | {name}")
+            # The faithful variant per phrasing is the essential check and runs
+            # everywhere. The adversarial variants (six model misreadings per
+            # phrasing, 216 cases, ~17 s under coverage) are the extended sweep:
+            # `python -m pytest sophia/test -m extended` before a release or
+            # after touching chat routing; CI runs `-m "not extended"`.
+            marks = [] if name == "faithful" else [pytest.mark.extended]
+            yield pytest.param(entry, reply, id=f"{message[:42]} | {name}", marks=marks)
 
 
 @pytest.fixture

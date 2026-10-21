@@ -114,3 +114,39 @@ def no_real_model_warm_up(monkeypatch):
     from sophia.backend.ai import ollama_client
 
     monkeypatch.setattr(ollama_client, "warm", lambda model: None)
+
+
+CI_CORE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_core.txt")
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "extended: outside the CI core set (ci_core.txt); excluded in CI, run with -m extended before a release")
+
+
+def _core_entries():
+    """`file::test` lines from ci_core.txt, comments and blanks dropped. A bare
+    function name keeps every parametrized case; `name[id]` keeps one."""
+    with open(CI_CORE, encoding="utf-8") as f:
+        return {line.split("#", 1)[0].strip() for line in f} - {""}
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(config, items):
+    """Mark every test not named in ci_core.txt `extended`, before -m deselects,
+    so Sophia-CI's `-m "not extended"` runs the core set and nothing else."""
+    core = _core_entries()
+    matched, files = set(), set()
+    for item in items:
+        files.add(item.path.name)
+        keys = (f"{item.path.name}::{item.name}", f"{item.path.name}::{getattr(item, 'originalname', item.name)}")
+        hit = next((key for key in keys if key in core), None)
+        if hit:
+            matched.add(hit)
+        else:
+            item.add_marker(pytest.mark.extended)
+    # A renamed or deleted core test must not silently leave CI. Only checked
+    # when whole files were collected; a single `file::test` run skips it.
+    if not any("::" in arg for arg in config.args):
+        stale = sorted(entry for entry in core - matched if entry.split("::", 1)[0] in files)
+        if stale:
+            raise pytest.UsageError("ci_core.txt names tests that no longer exist: " + ", ".join(stale))

@@ -10,6 +10,7 @@ on:
       - "shared/**"
       - "ai-services/rag-server/sources/billing/**"
       - "ai-services/mcp-server/**"
+      - "ai-services/multi-agent-server/**"
       - "docker-compose.yml"
   push:
     branches:
@@ -26,6 +27,7 @@ on:
 env:
   MCP_ENABLED: "false"
   RAG_ENABLED: "false"
+  MULTI_AGENT_ENABLED: "false"
 
 jobs:
   test:
@@ -36,14 +38,37 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            sophia/requirements.txt
+            ai-services/multi-agent-server/requirements.txt
       - name: Install dependencies
         run: pip install -r sophia/requirements.txt
       - name: Run tests
-        run: python -m pytest sophia/test -q --cov=sophia/backend --cov-report=term
+        # Core set only: sophia/test/ci_core.txt names the tests CI runs; everything else is marked
+        # `extended` (run `-m extended` locally before a release). Coverage is a local report
+        # (`--cov=sophia/backend`), not a CI gate; it costs ~50% here.
+        run: python -m pytest sophia/test -q -n auto -m "not extended"
       - name: Check the committed bills corpus is fresh
         run: python -m sophia.rag.build_corpus --from-seed --check
       - name: Run corpus tests
         run: python -m pytest sophia/rag -q
+
+  agentic-loop:
+    name: Agentic loop tooling tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sophia/requirements.txt
+      - name: Install dependencies
+        run: pip install -r sophia/requirements.txt
+      - name: Run tests
+        run: python -m pytest sophia/agentic_loop/tests -q
 
   docker-health:
     name: Bills container health with AI-Mode, MCP and RAG disabled
@@ -69,6 +94,7 @@ jobs:
           echo "$body"
           echo "$body" | grep '"mcp":"disabled"' || exit 1
           echo "$body" | grep '"rag":"disabled"' || exit 1
+          echo "$body" | grep '"multi_agent":"disabled"' || exit 1
           echo "$body" | grep '"ai":"unavailable"' || exit 1
           echo "$body" | grep '"ollama":"down"' || exit 1
       - name: Check disabled tool and evidence requests are refused with user-level copy
@@ -85,5 +111,5 @@ jobs:
         run: curl --fail http://127.0.0.1:3005/ || exit 1
       - run: docker logs bills-db && docker logs bills-backend && docker logs bills-frontend
         if: failure()
-      - run: docker compose down -v
+      - run: docker compose down -v --timeout 3
         if: always()

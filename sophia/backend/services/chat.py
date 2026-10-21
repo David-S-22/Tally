@@ -5,6 +5,7 @@ touches bills, payments, or disputes directly. apply() is the only path
 that writes those, always through the same CRUD calls a manual edit uses.
 """
 import json
+import logging
 import re
 import threading
 
@@ -27,6 +28,8 @@ from sophia.backend.services import evidence as evidence_service
 from sophia.backend.services import payments as payments_service
 from sophia.backend.services import tools as tools_service
 from sophia.backend.services.errors import ModeError, NotFound, ServiceError
+
+logger = logging.getLogger(__name__)
 
 # The model is asked for the real column names, but a small model drifts, and
 # it drifts predictably: it says "amount" in dollars where the column is
@@ -638,6 +641,9 @@ def _model_turn(model_message, history, fallback=None, stated=None, grounded=Tru
             }
         )
         preview["suggestion_id"] = suggestion["id"]
+        run_id = _review_with_agents(suggestion["id"], model_message, preview, [bills_db.row_to_bill(r) for r in bills])
+        if run_id:
+            preview["run_id"] = run_id  # Release 2: the agents are reviewing this proposal in the background
         if (preview["op"], preview["entity"]) == ("create", "dispute"):
             try:
                 _warm_in_background(config.DRAFT_MODEL)
@@ -652,6 +658,17 @@ def _model_turn(model_message, history, fallback=None, stated=None, grounded=Tru
         "tool": facts,
         "route": route,
     }
+
+
+def _review_with_agents(suggestion_id, message, preview, bills):
+    """Release 2: hand a fresh proposal to the shared Multi-Agent Server in the background; the run id, or None when the mode is off or the start fails (the R1 card still works)."""
+    from sophia.backend.services import multi_agent as multi_agent_service  # lazy: that module imports this one
+
+    try:
+        return multi_agent_service.start_chat_suggestion(suggestion_id, message, preview, bills)
+    except Exception:  # never let the agents break the chat reply
+        logger.exception("could not start the multi-agent review for suggestion %s", suggestion_id)
+        return None
 
 
 def _normalise_chat_fields(entity, op, fields):
@@ -779,16 +796,24 @@ def apply(op, entity, entity_id, fields, message_id=None):
     return result
 
 
-def approve_suggestion(suggestion_id):
+def approve_suggestion(suggestion_id, proposal=None):
     """Apply a pending suggestion. Claims the row first (an atomic
     pending→applied transition in the DB), so two racing approves — or a
-    double-clicked button — cannot both execute the change."""
+    double-clicked button — cannot both execute the change.
+
+    ``proposal`` (Release 2) is an already-vetted ``{op, entity, id, fields}``
+    from the multi-agent review that replaces what the row proposed; the row
+    still records the outcome, so the chat history and the panel stay true."""
     row = bills_db.get_suggestion(suggestion_id)
     if row is None:
         raise NotFound("suggestion not found")
     bills_db.update_suggestion(suggestion_id, {"status": "applied"})
 
-    fields = json.loads(row["payload_json"]) if row["payload_json"] else {}
+    if proposal:
+        row = {**row, "op": proposal["op"], "entity": proposal["entity"], "entity_id": proposal.get("id")}
+        fields = proposal.get("fields") or {}
+    else:
+        fields = json.loads(row["payload_json"]) if row["payload_json"] else {}
     bill_name = _bill_name(row["entity_id"]) if row["entity"] == "bill" and row["op"] in ("update", "delete") else None
     try:
         result = _execute(row["op"], row["entity"], row["entity_id"], fields)

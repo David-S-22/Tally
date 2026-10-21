@@ -20,3 +20,7 @@ bicep/**/*.json
 ai-services/multi-agent-server/logs/*.jsonl
 ai-services/multi-agent-server/logs/*.tmp
 ai-services/multi-agent-server/logs/server.lock
+
+# Release 2 report workings: scratch under docs/release-2/sophia/ stays local.
+# The evidence and diagrams already committed there are tracked and unaffected.
+docs/release-2/sophia/

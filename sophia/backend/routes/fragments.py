@@ -21,6 +21,7 @@ from sophia.backend.engine.status import derive_status
 from sophia.backend.services import bills as bills_service
 from sophia.backend.services import chat as chat_service
 from sophia.backend.services import disputes as disputes_service
+from sophia.backend.services import multi_agent as multi_agent_service
 from sophia.backend.services import payments as payments_service
 from sophia.backend.services.calendar import parse_year_month
 from sophia.backend.services.errors import ServiceError
@@ -411,6 +412,8 @@ def _render_dispute_panel(dispute_id=None, bill_id=None, version=None, oob=False
         versions=versions,
         selected_version=chosen["version"] if chosen else None,
         oob=oob,
+        agent_run=_agent_run_view("dispute_letter", dispute["id"]),
+        multi_agent_enabled=config.MULTI_AGENT_ENABLED,
     )
 
 
@@ -581,6 +584,7 @@ def _suggestion_view(row):
     return {
         "id": row["id"], "status": row["status"], "error": row.get("error"),
         "title": title, "rows": rows, "warning": warning,
+        "agent_run": _agent_run_view("chat_suggestion", row["id"]) if row["status"] == "pending" else None,
     }
 
 
@@ -781,3 +785,88 @@ def modal():
 @bp.get("/toast")
 def toast():
     return render_template("toast.html", text=request.args.get("text", "Done — change saved."))
+
+# --- Release 2: Multi-Agent Server workflows --------------------------------
+
+def _agent_run_view(kind, subject_id):
+    """The latest run for a dispute or suggestion as the agent_review fragment wants it, or None."""
+    run = multi_agent_service.latest_run(kind, subject_id)
+    if run is None:
+        return None
+    view = multi_agent_service.run_status(run["run_id"])
+    if view["summary"] and view["summary"]["decision"]:
+        return None  # decided runs are history; the stored draft or applied change shows instead
+    if view["state"] == "error":
+        return None  # the agents never ran (server down, busy, timeout): the R1 card and its buttons come back
+    return view
+
+
+def _render_agent_review(run_id):
+    return render_template("agent_review.html", run=multi_agent_service.run_status(run_id))
+
+
+@bp.post("/disputes/<int:dispute_id>/workflow")
+def disputes_workflow_start(dispute_id):
+    """Start the three agents on the letter and hand back the polling block."""
+    run_id = multi_agent_service.start_dispute_letter(dispute_id)
+    return _render_agent_review(run_id), 202
+
+
+@bp.get("/workflow-runs/<run_id>")
+def workflow_run_poll(run_id):
+    """The agent_review block, re-rendered; it keeps polling itself until the run ends."""
+    return _render_agent_review(run_id)
+
+
+def _decision_form():
+    decision = request.form.get("decision")
+    corrected = request.form.get("corrected_output")
+    reason = request.form.get("reason") or None
+    if decision != "Partially Accept":
+        corrected = None
+    return decision, corrected, reason
+
+
+@bp.post("/disputes/<int:dispute_id>/workflow/<workflow_id>/decision")
+def disputes_workflow_decide(dispute_id, workflow_id):
+    decision, corrected, reason = _decision_form()
+    multi_agent_service.decide_dispute_letter(dispute_id, workflow_id, decision, corrected_output=corrected, reason=reason)
+    toast = {
+        "Accept": "Letter accepted and saved as a new version.",
+        "Partially Accept": "Your edited letter was saved as a new version.",
+        "Reject": "Rejected — nothing was saved.",
+    }[decision]
+    return _dispute_write_response(dispute_id, toast)
+
+
+@bp.post("/suggestions/<int:suggestion_id>/workflow/<workflow_id>/decision")
+def suggestions_workflow_decide(suggestion_id, workflow_id):
+    decision, corrected, reason = _decision_form()
+    if corrected:
+        try:
+            corrected = json.loads(corrected)
+        except ValueError:
+            raise ServiceError("The edited change must stay valid JSON") from None
+    pre_row = bills_db.get_suggestion(suggestion_id)
+    opened_dispute = None
+    try:
+        record = multi_agent_service.decide_chat_suggestion(suggestion_id, workflow_id, decision, corrected_output=corrected, reason=reason)
+        applied = record.get("applied")
+        if decision != "Reject" and pre_row and isinstance(applied, dict) and applied.get("draft") is not None:
+            opened_dispute = applied.get("id")
+        toast = {
+            "Accept": "Done — change saved.",
+            "Partially Accept": "Done — your edited change was saved.",
+            "Reject": "Rejected — nothing was changed.",
+        }[decision]
+    except ServiceError as error:
+        toast = error.message
+    row = bills_db.get_suggestion(suggestion_id)
+    html = _render_suggestions_panel()
+    if row and row["status"] == "applied":
+        html += _render_bills_table_oob()
+    if opened_dispute:
+        html += _render_dispute_panel(dispute_id=opened_dispute, oob=True) + _render_dispute_list(oob=True)
+    response = make_response(html, 200)
+    response.headers["HX-Trigger"] = json.dumps({"toast": toast, "switchTab": "disputes"} if opened_dispute else {"toast": toast})
+    return response

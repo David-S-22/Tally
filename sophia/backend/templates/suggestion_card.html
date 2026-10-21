@@ -15,7 +15,9 @@
 </table>
 {% endif %}
 {% if suggestion.warning %}<p class="suggestion-warning">{{ suggestion.warning }}</p>{% endif %}
-{% if suggestion.status == "pending" %}
+{% if suggestion.status == "pending" and suggestion.agent_run %}
+{% with run=suggestion.agent_run %}{% include "agent_review.html" %}{% endwith %}
+{% elif suggestion.status == "pending" %}
 <div class="suggestion-actions">
   <button class="confirm btn-sm" hx-post="/bills-backend/ui/suggestions/{{ suggestion.id }}/approve"
           hx-target="#suggestions-panel" hx-swap="outerHTML" hx-disabled-elt="this">Approve</button>

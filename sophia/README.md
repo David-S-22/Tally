@@ -186,6 +186,27 @@ Codes: 503 `mcp_disabled`, `rag_disabled`, `mcp_connection`, `mcp_timeout`, `rag
 Routes: `GET /api/tools`, `POST /api/tools/<name>`, `POST /api/evidence`; fragments `GET /ui/tools`, `POST /ui/tools/search_transactions`, `GET /ui/evidence`, `POST /ui/evidence`.
 Start order for a live run: `docker compose up -d`, then `python ai-services/rag-server/server.py`, then `python ai-services/mcp-server/server.py`. Sophia-CI runs with both switches `"false"` and asserts the refusal; it has no `rag` job and its path filter is `ai-services/rag-server/sources/billing/**`; `python sophia/rag/mcp_ragtest.py` is the terminal check of both tools.
 
+## Multi-Agent Server (Bills, Release 2)
+
+bills-backend reaches the shared Multi-Agent Server (`ai-services/multi-agent-server/`, contract 1.0 in `docs/release-2/shared/multi-agent-server-contract.md`) through `clients/multi_agent.py` (plain `requests`; `MULTI_AGENT_SERVER_URL`, default `http://host.docker.internal:5010`; `MULTI_AGENT_TOKEN` forwarded as a bearer header, required once the server is bound off loopback for Docker). The server's prompts are shared and generic and treat `context` as data, so everything Bills-specific the three agents must follow lives in the task text: `ai/agent_tasks.py` holds one template per workflow with a Planner, Worker and Reviewer paragraph each. Two workflows:
+
+- **Dispute letter** — `services/multi_agent.py:start_dispute_letter` gathers the dispute's bank and policy evidence with the same `bank_evidence` / `policy_evidence` helpers the single-model letter uses, sends `{source, summary, data}` items plus the bill row, and the Worker drafts a 90–180 word letter under the Release 1 bank-facts-only rule. Accept stores the Worker's letter as the next draft version, Partially Accept stores the user's edited letter (a reason is required), Reject stores nothing. The stored draft's `steps_json` carries the evidence, the Reviewer's verdict and risks, and the `workflow_id`.
+- **Chat suggestion** — when Ask Tally proposes a change, `services/chat.py:_review_with_agents` hands the proposal, the user's words and the bill rows to the agents in the background; the Worker returns the change as `structured` `{op, entity, id, fields}`. Accept runs it through `_vet_proposal` (the same deterministic check every chat proposal gets) and applies it via `approve_suggestion`; Partially Accept applies the user's edited JSON; Reject rejects the suggestion. Plain questions never touch the server.
+
+Known limits (Release 2): runs live in bills-backend's memory, so a backend restart forgets an in-flight run while the server keeps its workflow pending, and a client timeout (600 s) leaves a server-side workflow Bills never learns the id of; Bills does not call `GET /workflow/status` to recover either case, and a run that could not start (server down, busy, timeout) simply hands the suggestion back to its Release 1 Approve/Reject card. While a suggestion's run is in flight its card shows the polling block instead of the Release 1 buttons; on a CPU-only machine that can be minutes, so the demo profile below matters. A decision is only accepted for the dispute or suggestion whose workflow it is (the server echoes the Bills `context`), decided runs are kept in memory up to the last 20, and the review block then shows the stored draft or applied change, not the form.
+Runs are asynchronous: a workflow is three sequential model calls and the server runs one at a time, so `start_*` returns a run id, a one-worker executor runs it, and the `agent_review.html` block polls `GET /ui/workflow-runs/<run_id>` every 2 s showing which agent is working. Bills' own runs queue in front of the server's single slot instead of tripping `workflow_busy`. The server's decision rules (Partially Accept needs a reason; accepting a non-approve verdict needs a reason; a failed run is reject-only; one decision per workflow) are checked in `services/multi_agent.py` first so the user sees a plain message.
+Switches and knobs: `MULTI_AGENT_ENABLED` (code default off; compose `${MULTI_AGENT_ENABLED:-true}` on bills-backend, the same shape as `MCP_ENABLED` and the multi-agent env Savings carries since #222; CI and the cloud baseline `"false"`), `MULTI_AGENT_SERVER_URL` and `MULTI_AGENT_TIMEOUT_SECONDS` (code defaults `http://host.docker.internal:5010` and 600, the server's model deadline being 540 s). In compose the last three take the same repository-root `.env` parameters Savings reads, so one file drives both backends: `${MULTI_AGENT_URL:-http://host.docker.internal:5010}`, `${MULTI_AGENT_TOKEN:-}` (the file the server itself reads) and `${MULTI_AGENT_TIMEOUT:-600}` (Savings defaults that key to 1800; Bills keeps 600, the value its 540 s server deadline was chosen against). The names differ either side of the colon because the two services read different variables: Savings takes `MULTI_AGENT_URL`/`MULTI_AGENT_TIMEOUT` directly, Bills the `_SERVER_URL`/`_SECONDS` pair above. The review block polls every 2 s (`agent_review.html`). `bicep/main.bicep` sets none of these: the code default keeps Multi-Agent off in the cloud baseline.
+Codes: 503 `multi_agent_disabled`, `multi_agent_connection`, `multi_agent_timeout`, `multi_agent_busy`, `multi_agent_unauthorized`; 502 `multi_agent_error`, `multi_agent_invalid_result`; 409 `multi_agent_rejected` (a second decision or a request the server refused), `multi_agent_failed` (anything but Reject on a failed run); 404 for an unknown workflow or run.
+Routes: `POST /api/disputes/<id>/workflow` (202, `{run_id}`), `GET /api/workflow-runs/<run_id>`, `POST /api/disputes/<id>/workflow/<workflow_id>/decision` and `POST /api/chat/suggestions/<id>/workflow/<workflow_id>/decision` with `{decision, corrected_output?, reason?}`; fragments `POST /ui/disputes/<id>/workflow`, `GET /ui/workflow-runs/<run_id>`, `POST /ui/disputes/<id>/workflow/<wid>/decision`, `POST /ui/suggestions/<id>/workflow/<wid>/decision`. `/health` reports `modes.multi_agent`.
+Latency: the shared server's defaults (`qwen2.5:3b` planner and worker, `llama3.1:8b` reviewer) took 43–165 s per workflow in the server's verified runs and minutes on a CPU-only machine, so the UI never blocks on a run. Demo profile, measured on the demo laptop (RTX 3060 Laptop, 6 GB VRAM) with `python -m sophia.eval.time_workflow --runs 3`, 20 Oct 2026:
+
+| Reviewer | Runs | Total (mean, range) | Planner / worker / reviewer | Notes |
+|---|---|---|---|---|
+| `llama3.1:8b` (default) | 3 | 49.0 s (48.3–50.5) | ~11 / ~3 / ~35 s | 6.2 GB doesn't fit in 6 GB VRAM: 32% runs on the CPU, and it evicts `qwen2.5:3b` every run. 0 repairs, verdict always approve_with_changes |
+| `qwen2.5:3b` | 6 | 25.6 s (10.1–32.0) | ~3.7 / ~2.6 / 4.2–25.7 s | One model, 100% GPU, nothing to swap. 4 of 6 reviewer replies failed validation and needed the server's one repair (~21 s lost); every repaired run returned reject |
+
+Run the demo with `MULTI_AGENT_REVIEWER_MODEL=qwen2.5:3b` on the server. It halves the wait, and its worst run (32 s) beats the 8b's best (48 s). The cost: the 20 s target is met in only 2 of 6 runs, and a repaired run says reject even on a usable letter. That is a reviewer quality limit, not a failure; Accept against the reviewer with a reason is the intended human override. The 8b reviewer is no more accurate on this task: in all three runs it said the evidence "only shows" the $17.99 charge, though the evidence lists all three. The evidence runs in `docs/release-2/sophia/multi-agent/` used the default profile. Start order for a live run adds `python ai-services/multi-agent-server/server.py`. `sophia/test/test_multi_agent_routes.py` drives the real server coordinator (fake model) behind the client on the live database, so both sides of the contract are tested together.
+
 ## Inbound contracts
 
 See `docs/release-0/sophia/contracts-inbound.md` (first written 22 Aug 2026,
@@ -203,13 +224,22 @@ proposal until the user decides on it) and why each exists.
 ## Testing and evidence
 
 ```
-python -m pytest sophia/test -q --cov=sophia/backend --cov-report=term
+python -m pytest sophia/test -q -n auto -m "not extended"       # the core set, what Sophia-CI runs (~11 s on 2 cores)
+python -m pytest sophia/test -q -n auto -m extended              # everything else, before a release
+python -m pytest sophia/test -q --cov=sophia/backend --cov-report=term   # the coverage report, locally
+python -m pytest sophia/agentic_loop/tests -q                    # the agentic loop tooling (its own CI job)
 ```
 
-283 passed; coverage 91% across `sophia/backend` (1698 statements, 155 missed;
-measured 7 Sep 2026 on Python 3.13.2 at `aede425`). The same suite is green on
-Python 3.12 in Sophia-CI run 145, and the saved output is
-`docs/release-0/sophia/evidence/compose/pytest-283-passed.txt`.
+719 tests, 21 Oct 2026: 175 core + 544 extended. `sophia/test/ci_core.txt`
+names the core set, one test per behaviour or route plus one case of each
+parametrized sweep; `conftest.py` marks every other test `extended`, and a
+core entry that stops matching a test fails collection. The extended set keeps
+the edge cases, the copy-level fragment checks and the adversarial sweep in
+`test_chat_route_matrix.py` (every corpus phrasing × six model misreadings);
+nothing was deleted, so run both before a release. Coverage is a local
+report, not a CI gate. Coverage was
+91% across `sophia/backend` when last measured (7 Sep 2026, `aede425`); the
+saved output is `docs/release-0/sophia/evidence/compose/pytest-283-passed.txt`.
 
 Covers the engine (dates, projection, calendar, status, money), the database
 API (temp SQLite per test, seed row counts, CRUD round-trips, cascade
