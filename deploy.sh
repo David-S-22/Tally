@@ -167,11 +167,28 @@ update_container_apps() {
 
 # Native Python services: provision once, then pull code only on deployment.
 provision_ai_vms() {
+    local force=false
+    if [ "${1:-}" = "--force" ]; then
+        force=true
+    fi
+
+    if az vm show -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" &>/dev/null; then
+        if [ "$force" = false ]; then
+            echo "==> AI VM '$AI_VM_NAME' already exists in '$RESOURCE_GROUP'."
+            echo "==> Updating AI services instead of reprovisioning (pass --force to reprovision)..."
+            update_ai_services_vm
+            return 0
+        else
+            echo "==> Force reprovision requested. Deleting existing VM '$AI_VM_NAME'..."
+            az vm delete -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" --yes
+        fi
+    fi
+
     : "${MULTI_AGENT_TOKEN:?Set MULTI_AGENT_TOKEN before provisioning}"
     [[ "$MULTI_AGENT_TOKEN" =~ ^[A-Za-z0-9_-]{32,}$ ]] || { echo 'Use a token of 32+ letters, digits, underscores or hyphens.' >&2; return 1; }
     export CONTAINER_DOMAIN
     CONTAINER_DOMAIN=$(az containerapp env show -g "$RESOURCE_GROUP" -n cae-tally --query properties.defaultDomain -o tsv)
-    export AI_VM_SSH_PUBLIC_KEY="${AI_VM_SSH_PUBLIC_KEY:-$(cat "$HOME/.ssh/id_rsa.pub")}"
+    export AI_VM_SSH_PUBLIC_KEY="${AI_VM_SSH_PUBLIC_KEY:-$(cat "$HOME/.ssh/id_rsa.pub" 2>/dev/null || true)}"
     az deployment group create -g "$RESOURCE_GROUP" --name tally-ai-vms \
         --template-file bicep/ai-services.bicep --parameters bicep/ai-services.bicepparam --output none
     for service in rag mcp multi-agent; do check_ai_endpoint "$service"; done
@@ -181,9 +198,11 @@ update_ai_services_vm() {
     local services=("$@")
     local service result
     [ "${#services[@]}" -gt 0 ] || services=(rag mcp multi-agent)
+    echo "==> Ensuring AI VM '$AI_VM_NAME' is running..."
+    az vm start -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" --output none
     for service in "${services[@]}"; do
         case "$service" in mcp|rag|multi-agent) ;; *) echo "Unknown service: $service" >&2; return 1 ;; esac
-        az vm start -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" --output none
+        echo "==> Updating AI service: $service on $AI_VM_NAME..."
         # Azure Run Command can return success even when the script fails.
         result=$(az vm run-command invoke -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" \
             --command-id RunShellScript \
@@ -209,7 +228,16 @@ check_ai_endpoint() {
 
 TARGET="${1:-all}"
 case "$TARGET" in
-    ai-vms|--ai-vms) provision_ai_vms; exit 0 ;;
+    ai-vms|--ai-vms)
+        shift || true
+        provision_ai_vms "$@"
+        exit 0
+        ;;
+    ai-vms-force|--ai-vms-force)
+        shift || true
+        provision_ai_vms --force "$@"
+        exit 0
+        ;;
     ai-update|--ai-update)
         shift
         update_ai_services_vm "$@"
@@ -240,16 +268,17 @@ case "$TARGET" in
         DEPLOY_VM=true
         ;;
     *)
-        echo "Usage: ./deploy.sh [all | containers | update | vm | health | ai-vms | ai-update]"
+        echo "Usage: ./deploy.sh [all | containers | update | vm | health | ai-vms | ai-vms-force | ai-update]"
         echo ""
         echo "Options:"
-        echo "  all         Deploy Ollama, containers and the shared AI VM (default)"
-        echo "  containers  Deploy microservice containers via Bicep (skip VM)"
-        echo "  update      Fast update: rebuild, push, then update apps four at a time (skips Bicep)"
-        echo "  vm          Deploy Ollama VM only and wait for health check"
-        echo "  ai-vms      Provision the shared VM for all three Python services"
-        echo "  ai-update   Update Python services; optionally append mcp, rag, multi-agent"
-        echo "  health      Check current health and models of the Ollama VM"
+        echo "  all           Deploy Ollama, containers and the shared AI VM (default)"
+        echo "  containers    Deploy microservice containers via Bicep (skip VM)"
+        echo "  update        Fast update: rebuild, push, then update apps four at a time (skips Bicep)"
+        echo "  vm            Deploy Ollama VM only and wait for health check"
+        echo "  ai-vms        Ensure the shared VM is provisioned (updates services if already exists)"
+        echo "  ai-vms-force  Delete and reprovision the shared AI VM from scratch via Bicep"
+        echo "  ai-update     Update Python services; optionally append mcp, rag, multi-agent"
+        echo "  health        Check current health and models of the Ollama VM"
         exit 1
         ;;
 esac

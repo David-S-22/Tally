@@ -31,8 +31,6 @@ on:
           - auto
           - update
           - containers
-          - all
-          - ai-vms
           - ai-update
 
 concurrency:
@@ -87,7 +85,7 @@ jobs:
 
           if grep -Eq '^(bicep/|scripts/|deploy\.sh|\.github/workflows/cloud-deployment\.yml)' <<< "$CHANGED"; then
             bash ./deploy.sh containers
-            bash ./deploy.sh ai-vms
+            bash ./deploy.sh ai-update
             exit 0
           fi
 
