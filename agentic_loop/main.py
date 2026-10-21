@@ -464,7 +464,7 @@ def run_command(args):
     """Run a host tool from the repository root. Returns (exit code, output).
     An exit code of None means the tool could not run, and output says why."""
     try:
-        done = subprocess.run(args, capture_output=True, text=True, cwd=REPO_ROOT,
+        done = subprocess.run(args, capture_output=True, text=True, cwd=REPO_ROOT,  # noqa: S603 fixed argv, no shell
                               timeout=float(os.getenv("LOOP_COMMAND_TIMEOUT", "300")))
     except (OSError, subprocess.TimeoutExpired) as exc:
         return None, f"{args[0]}: {type(exc).__name__}"

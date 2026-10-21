@@ -54,8 +54,10 @@ The Multi-Agent, Testing and Cloud modes have their own prerequisites. The Multi
 the server running on 5010, started with
 `python ai-services/multi-agent-server/server.py`, and `MULTI_AGENT_TOKEN`
 in the root `.env`, or `MULTI_AGENT_EXPORT_DIR` set to a committed export
-folder. The Testing mode needs `.pre-commit-config.yaml` at the repository
-root and the GitHub CLI (`gh`) logged in. The Cloud mode needs `gh` and
+folder. The Testing mode runs the root `.pre-commit-config.yaml`, whose three
+hooks each run one pytest file in `tests/pre_commit/` (Ruff `S` rules from
+`ruff.toml`, detect-secrets against `.secrets.baseline`, and pip-audit once
+per requirements file), and needs the GitHub CLI (`gh`) logged in. `pre-commit install` makes the same scans run on every commit. The Cloud mode needs `gh` and
 `CLOUD_APP_URL` for the live probe.
 
 Git ignores `reports/`. The committed samples live in

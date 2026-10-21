@@ -1,0 +1,14 @@
+# Security-only lint for the pre-commit hook; style rules stay with each service.
+target-version = "py312"
+extend-exclude = ["node_modules"]
+
+[lint]
+select = ["S"]
+# S104: every service binds 0.0.0.0 on purpose, Docker publishes the port
+ignore = ["S104"]
+
+[lint.per-file-ignores]
+# test idioms: assert, fake tokens, raw SQL on literal ids, urlopen on localhost probes
+"**/test/**" = ["S101", "S105", "S106", "S310", "S608"]
+"**/tests/**" = ["S101", "S105", "S106", "S310", "S608"]
+"**/test_*.py" = ["S101", "S105", "S106", "S310", "S608"]
