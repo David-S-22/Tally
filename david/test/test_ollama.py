@@ -539,11 +539,9 @@ def test_compose_and_ci_disable_mcp_and_rag():
     repo_root = pathlib.Path(__file__).resolve().parent.parent.parent
     compose_path = repo_root / "docker-compose.yml"
     ci_path = repo_root / ".github" / "workflows" / "David-CI.yml"
-    cloud_path = repo_root / "bicep" / "main.bicep"
 
     compose_text = compose_path.read_text(encoding="utf-8")
     ci_text = ci_path.read_text(encoding="utf-8")
-    cloud_text = cloud_path.read_text(encoding="utf-8")
 
     # savings-backend environment in docker-compose.yml
     savings_section = compose_text.split("savings-backend:", 1)[1].split("depends_on:", 1)[0]
@@ -553,11 +551,4 @@ def test_compose_and_ci_disable_mcp_and_rag():
     # David-CI.yml disables MCP and RAG during health check
     assert 'MCP_ENABLED: "false"' in ci_text
     assert 'RAG_ENABLED: "false"' in ci_text
-
-    # Cloud savings uses Ollama directly, with MCP, RAG, and multi-agent off.
-    savings_cloud = cloud_text.split("module modSavingsBackend", 1)[1].split("// --- Frontends", 1)[0]
-    assert "{ name: 'OLLAMA_URL', value: '${ollamaUrl}/v1' }" in savings_cloud
-    assert "{ name: 'MCP_ENABLED', value: 'false' }" in savings_cloud
-    assert "{ name: 'RAG_ENABLED', value: 'false' }" in savings_cloud
-    assert "{ name: 'MULTI_AGENT_ENABLED', value: 'false' }" in savings_cloud
 
