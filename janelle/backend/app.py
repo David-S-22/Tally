@@ -21,7 +21,7 @@ from .Helpers import (
     render_transaction_page,
     render_transaction_table_from_database,
 )
-from .services import mcp_client, rag_client, rag_corpus
+from .services import category_review, mcp_client, rag_client, rag_corpus
 from .services.chat_service import ChatError
 from .services.transaction_orchestrator import (
     get_preview_request_context,
@@ -126,6 +126,10 @@ def setup_app(db_url: str) -> Flask:
         format_transaction_date
     )
     application.jinja_env.filters["currency"] = format_currency
+
+    @application.context_processor
+    def multi_agent_flag():
+        return {"multi_agent_enabled": config.MULTI_AGENT_ENABLED}
 
     @application.errorhandler(requests.RequestException)
     def handle_database_unavailable(error):
@@ -622,6 +626,55 @@ def setup_app(db_url: str) -> Flask:
     @application.get("/ui/chat/clear")
     def clear_ui_chat():
         return ""
+
+    def render_agent_review(run, status=200, error=None, message=None):
+        return render_template(
+            "agent_review.jinja",
+            run=run,
+            error=error,
+            message=message,
+            suggested_id=category_review.suggested_category_id(run),
+        ), status
+
+    @application.post("/ui/transactions/<int:transaction_id>/agent-review")
+    def start_agent_review(transaction_id):
+        if not config.MULTI_AGENT_ENABLED:
+            return "<p role=\"alert\">Agent review is turned off.</p>", 404
+        try:
+            run = category_review.start_run(db_url, transaction_id)
+        except ChatError as error:
+            return (
+                f"<p role=\"alert\">{error.message}</p>",
+                error.status,
+            )
+        return render_agent_review(run)
+
+    @application.get("/ui/agent-review/<run_id>")
+    def get_agent_review(run_id):
+        run = category_review.get_run(run_id)
+        if run is None:
+            return "<p role=\"alert\">This review has expired. Start a new one.</p>", 404
+        return render_agent_review(run)
+
+    @application.post("/ui/agent-review/<run_id>/decision")
+    def decide_agent_review(run_id):
+        run = category_review.get_run(run_id)
+        if run is None:
+            return "<p role=\"alert\">This review has expired. Start a new one.</p>", 404
+        try:
+            message = category_review.decide(
+                run,
+                db_url,
+                request.form.get("decision"),
+                request.form.get("category_id", type=int),
+                request.form.get("reason"),
+            )
+        except ChatError as error:
+            return render_agent_review(run, error.status, error=error.message)
+        response = make_response(render_agent_review(run, message=message))
+        if message.startswith("Category set to"):
+            response.headers["HX-Trigger"] = "transactionsChanged"
+        return response
 
     application.config["TRANSACTIONS_DB_URL"] = db_url
     return application
