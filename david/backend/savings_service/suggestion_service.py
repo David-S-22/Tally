@@ -471,6 +471,8 @@ def generate_advice(
     spending_summary = _aggregate_spending_by_merchant(transactions, category_map)
 
     rag_guidelines = _fetch_rag_guidelines(goals)
+    if MCP_ENABLED and RAG_ENABLED and not rag_guidelines:
+        return "Insufficient context available to generate savings advice.", None, None, None
     rag_context_blocks, sources_str = rag_guidelines if rag_guidelines else (None, None)
 
     user_data = format_planner_prompt(goals, suggestions, feedbacks, tx_url=tx_url)
