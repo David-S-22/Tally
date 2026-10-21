@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import time
 from copy import deepcopy
 
@@ -87,6 +88,7 @@ class Ollama:
                 messages=messages,
                 format=schema,
                 stream=False,
+                logprobs=True,
                 options={"temperature": 0, "num_predict": 2048, "num_ctx": 8192},
             )
         )
@@ -94,7 +96,18 @@ class Ollama:
             raise AgentError(
                 "invalid_model_output", "Model provider returned an invalid envelope"
             )
-        return response.message.content
+        confidence = None
+        if response.logprobs:
+            probability = sum(
+                math.exp(token.logprob) for token in response.logprobs
+            ) / len(response.logprobs)
+            if probability >= 0.70:
+                confidence = "High"
+            elif probability >= 0.40:
+                confidence = "Medium"
+            else:
+                confidence = "Low"
+        return response.message.content, confidence
 
     def health(self):
         try:
@@ -141,9 +154,13 @@ class Agents:
         else:
             references["maxItems"] = 0
         for attempt in range(2):
-            content = self.model.generate(role, messages, schema, deadline)
+            content, confidence = self.model.generate(role, messages, schema, deadline)
             try:
                 result = json.loads(content)
+                if isinstance(result, dict):
+                    refs = result.get(reference_field)
+                    if isinstance(refs, list) and all(isinstance(ref, str) for ref in refs):
+                        result[reference_field] = list(dict.fromkeys(refs))
                 validate(result, schema)
                 refs = result.get("evidence_used", result.get("required_evidence", []))
                 if len(set(refs)) != len(refs) or not set(refs) <= sources:
@@ -161,6 +178,7 @@ class Agents:
                     "status": "success",
                     "agent": f"{role}_agent",
                     "model": self.settings.models[role],
+                    "confidence": confidence,
                     "human_approval_required": True,
                     **({"evidence_count": len(refs)} if role == "worker" else {}),
                 }

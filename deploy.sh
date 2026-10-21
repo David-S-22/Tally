@@ -129,6 +129,39 @@ build_and_push_containers() {
     done
 }
 
+# Update existing apps in batches of four; wait for each batch before continuing.
+update_container_apps() {
+    local tag="$1"
+    local offset item name index failed
+    local -a pids names
+    for ((offset = 0; offset < ${#SERVICES[@]}; offset += 4)); do
+        pids=()
+        names=()
+        failed=0
+        for item in "${SERVICES[@]:offset:4}"; do
+            name="${item%%:*}"
+            echo "--> Updating $name..."
+            az containerapp update \
+                --name "$name" \
+                --resource-group "$RESOURCE_GROUP" \
+                --image "$LOGIN_SERVER/$name:$tag" \
+                --output none &
+            pids+=("$!")
+            names+=("$name")
+        done
+        # Check every job so a failure does not leave sibling updates unwaited.
+        for index in "${!pids[@]}"; do
+            if wait "${pids[$index]}"; then
+                echo "--> Updated ${names[$index]}"
+            else
+                echo "ERROR: Update failed for ${names[$index]}" >&2
+                failed=1
+            fi
+        done
+        [ "$failed" -eq 0 ] || return 1
+    done
+}
+
 TARGET="${1:-all}"
 
 case "$TARGET" in
@@ -162,7 +195,7 @@ case "$TARGET" in
         echo "Options:"
         echo "  all         Deploy Ollama VM, verify health, then deploy containers (default)"
         echo "  containers  Deploy microservice containers via Bicep (skip VM)"
-        echo "  update      Fast update: rebuild, push, and update all containers via CLI (skips Bicep)"
+        echo "  update      Fast update: rebuild, push, then update apps four at a time (skips Bicep)"
         echo "  vm          Deploy Ollama VM only and wait for health check"
         echo "  health      Check current health and models of the Ollama VM"
         exit 1
@@ -206,15 +239,7 @@ if [ "$FAST_UPDATE" = true ]; then
     build_and_push_containers "$IMAGE_TAG"
 
     echo "==> Updating Container Apps in Azure via CLI..."
-    for item in "${SERVICES[@]}"; do
-        IFS=':' read -r name _ _ <<< "$item"
-        echo "--> Updating $name..."
-        az containerapp update \
-            --name "$name" \
-            --resource-group "$RESOURCE_GROUP" \
-            --image "$LOGIN_SERVER/$name:$IMAGE_TAG" \
-            --output none
-    done
+    update_container_apps "$IMAGE_TAG"
 
     echo "==> Fast update completed successfully!"
     exit 0

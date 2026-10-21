@@ -235,7 +235,7 @@ def setup_app(db_url: str, transactions_db_url: str) -> Flask:
     @app.route("/ai-suggestion")
     def get_ai_suggestion():
         previous_suggestion = request.args.get("suggestion")
-        suggestion, sources, confidence = generate_savings_advice(
+        suggestion, sources, confidence, reviewer = generate_savings_advice(
             db_url, tx_url=tx_url, previous_suggestion=previous_suggestion
         )
         return render_template(
@@ -243,6 +243,7 @@ def setup_app(db_url: str, transactions_db_url: str) -> Flask:
             suggestion=suggestion,
             sources=sources,
             confidence=confidence,
+            reviewer=reviewer,
         ), 200
 
     @app.route("/ai-suggestion/action", methods=["POST"])
