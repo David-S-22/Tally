@@ -1,0 +1,7 @@
+Given the evidence, state PASS or FAIL for each of these, one line each, quoting the evidence value you used:
+1. Deployment: the latest cloud-deployment.yml run on main concluded success.
+2. CI validation: every student CI run at the deployed commit concluded success (FAIL and name the student if any did not, or if a lookup failed).
+3. AI disabled by default: enableMcp, enableRag and deployOllamaVm are all false and no Multi-Agent app is in bicep/.
+4. Live frontend: the deployed frontend returned an HTTP 2xx status.
+5. Live CRUD: the CRUD endpoint returned an HTTP 2xx status (quote the row count if given).
+Then one sentence overall ending with "Recommend release: yes" only if all five are PASS, otherwise "Recommend release: no". If the evidence starts with OBSERVE FAILED, write FAIL for all five and recommend no.
