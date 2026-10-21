@@ -177,6 +177,24 @@ provision_ai_vms() {
     for service in rag mcp multi-agent; do check_ai_endpoint "$service"; done
 }
 
+update_ai_services_vm() {
+    local services=("$@")
+    local service result
+    [ "${#services[@]}" -gt 0 ] || services=(rag mcp multi-agent)
+    for service in "${services[@]}"; do
+        case "$service" in mcp|rag|multi-agent) ;; *) echo "Unknown service: $service" >&2; return 1 ;; esac
+        az vm start -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" --output none
+        # Azure Run Command can return success even when the script fails.
+        result=$(az vm run-command invoke -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" \
+            --command-id RunShellScript \
+            --scripts "/usr/local/bin/tally-ai-service $service && echo TALLY_UPDATE_OK" \
+            --query 'value[0].message' -o tsv)
+        printf '%s\n' "$result"
+        [[ "$result" == *TALLY_UPDATE_OK* ]] || return 1
+        check_ai_endpoint "$service"
+    done
+}
+
 check_ai_endpoint() {
     local service="$1" endpoint expected code
     case "$service" in
@@ -194,19 +212,7 @@ case "$TARGET" in
     ai-vms|--ai-vms) provision_ai_vms; exit 0 ;;
     ai-update|--ai-update)
         shift
-        [ "$#" -gt 0 ] || set -- rag mcp multi-agent
-        for service in "$@"; do
-            case "$service" in mcp|rag|multi-agent) ;; *) echo "Unknown service: $service" >&2; exit 1 ;; esac
-            az vm start -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" --output none
-            # Azure Run Command can return success even when the script fails.
-            result=$(az vm run-command invoke -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" \
-                --command-id RunShellScript \
-                --scripts "/usr/local/bin/tally-ai-service $service && echo TALLY_UPDATE_OK" \
-                --query 'value[0].message' -o tsv)
-            printf '%s\n' "$result"
-            [[ "$result" == *TALLY_UPDATE_OK* ]] || exit 1
-            check_ai_endpoint "$service"
-        done
+        update_ai_services_vm "$@"
         exit 0
         ;;
     --health|health)
