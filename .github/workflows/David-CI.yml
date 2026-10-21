@@ -1,6 +1,14 @@
 name: David-CI
 
 on:
+  push:
+    branches:
+      - "main"
+    paths:
+      - "david/**"
+      - ".github/workflows/David-CI.yml"
+      - "docker-compose.yml"
+      - "shared/**"
   pull_request:
     branches:
       - "main"

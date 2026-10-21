@@ -70,7 +70,7 @@ def setup_suggestions() -> List[Suggestion]:
     return [suggestion1, suggestion2]
 
 @pytest.mark.usefixtures("app_ctx")
-def test_get_all_goals(client: FlaskClient):
+def test_get_goals_endpoint_returns_saved_goals(client: FlaskClient):
     expected_goals = setup_goals()
     response = client.get("/goals")
     assert response.status_code == 200
@@ -346,7 +346,7 @@ def test_update_goal_invalid_values_are_atomic(client: FlaskClient):
     assert (persisted.name, persisted.cost, persisted.date) == original
 
 @pytest.mark.usefixtures("app_ctx")
-def test_create_goal(client: FlaskClient):
+def test_create_goal_endpoint_persists_goal(client: FlaskClient):
     goal_to_create = Goal()
     goal_to_create.cost = 5
     goal_to_create.name = "Borgr"
