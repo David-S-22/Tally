@@ -329,5 +329,6 @@ def test_after_a_dispute_decision_the_panel_shows_the_draft_not_the_form(world):
     assert after["summary"]["decision"] == "Accept"
     panel = world.client.get("/ui/disputes?dispute_id=1").data.decode()
     assert 'name="decision"' not in panel and "Draft with agents" in panel
+    drafts = len(bills_db.list_dispute_drafts(1))
     second = world.client.post(f"/api/disputes/1/workflow/{wid}/decision", json={"decision": "Reject"})
-    assert second.status_code != 200 and len(bills_db.list_dispute_drafts(1)) == len(bills_db.list_dispute_drafts(1))
+    assert second.status_code != 200 and len(bills_db.list_dispute_drafts(1)) == drafts

@@ -258,6 +258,7 @@ def _decided(workflow_id, record):
         for run in decided[:-KEEP_DECIDED_RUNS]:
             _runs.pop(run["run_id"], None)
 
+
 def _dispute_and_bill(dispute_id):
     dispute = bills_db.get_dispute(dispute_id)
     if dispute is None:
