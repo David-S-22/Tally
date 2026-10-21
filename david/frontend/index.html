@@ -54,6 +54,10 @@
                   <span class="ai-meta-label">Confidence:</span>
                   <span class="confidence-badge confidence-none">Waiting...</span>
                 </div>
+                <div class="ai-meta-item">
+                  <span class="ai-meta-label">Reviewer:</span>
+                  <span class="ai-meta-value">Waiting...</span>
+                </div>
               </div>
               <div class="ai-suggestion-feedback-section">
                 <label for="ai-feedback-input">Feedback on this suggestion:</label>
@@ -163,6 +167,13 @@
         if (confidenceBadge) {
           confidenceBadge.textContent = 'Waiting...';
           confidenceBadge.className = 'confidence-badge confidence-none';
+        }
+
+        const reviewerDetails = container.querySelector('.reviewer-details');
+        if (reviewerDetails) {
+          reviewerDetails.open = false;
+          reviewerDetails.querySelector('summary').textContent = 'Waiting...';
+          reviewerDetails.querySelector('.reviewer-feedback').hidden = true;
         }
 
         const feedbackInput = container.querySelector('#ai-feedback-input');

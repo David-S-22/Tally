@@ -10,8 +10,12 @@ and [the implementation plan](../../ethan/Release2-Multi-Agent-Server-Implementa
 
 ## Local setup (PowerShell, repository root)
 
-Requires Python 3.12+ and a running local Ollama runtime. No server container or
-cloud deployment is added. The Release 2 brief requires AI services outside
+Requires Python 3.12+ and a running local Ollama runtime.
+Create a repository-root `.env` containing `MULTI_AGENT_TOKEN` with a securely
+generated token of at least 32 non-whitespace characters before starting.
+The server and Compose both load this file; it is excluded from Git.
+
+No server container or cloud deployment is added. The Release 2 brief requires AI services outside
 Compose; any existing repository Ollama-in-Compose setup is a separate group
 deployment issue, not changed by this shared-server work.
 
@@ -37,10 +41,11 @@ the small local project/demo, not production deployment. Startup converts
 interrupted runs into failed, reject-only records rather than silently
 rerunning model work.
 
-The default is `http://127.0.0.1:5010`. In another terminal:
+The server binds to `0.0.0.0:5010` by default on every platform.
+Access it locally at `http://127.0.0.1:5010`. In another terminal:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:5010/health
+Invoke-RestMethod http://127.0.0.1:5010/health -Headers @{ Authorization = 'Bearer <your token from .env>' }
 ```
 
 `alive`/`ok` indicate the API is running; `ready` indicates Ollama and all
@@ -49,16 +54,15 @@ evidence is generated only when requested, not rewritten during state changes.
 
 ## Configure container-to-host access
 
-Feature backends will use `http://host.docker.internal:5010` on Docker Desktop.
-For a reachable host interface, explicitly configure binding and a token:
+Feature backends use `http://host.docker.internal:5010`. The default
+`0.0.0.0` binding accepts connections from Docker on all platforms.
+`MULTI_AGENT_HOST` can override the bind address when needed.
 
-```powershell
-$env:MULTI_AGENT_HOST = '0.0.0.0'
-$env:MULTI_AGENT_TOKEN = '<at-least-32-random-non-whitespace-characters>'
-```
+The host server automatically reads the repository-root `.env`, just as Compose
+does. Set the same `MULTI_AGENT_TOKEN` there for both services. Existing process
+environment variables take precedence. No platform-specific launch steps are
+needed. The token must contain at least 32 non-whitespace characters.
 
-Replace the placeholder with a securely generated secret. Supply the same token
-to approved callers via environment configuration, never browser code or Git.
 All endpoints require `Authorization: Bearer <token>` when a token is configured.
 Restrict Windows Firewall to the required local Docker traffic; do not expose
 port 5010 publicly. Plain HTTP bearer tokens are unsuitable on an untrusted
@@ -94,7 +98,7 @@ It refuses an existing directory to avoid overwriting evidence.
 
 | Variable | Default |
 | --- | --- |
-| `MULTI_AGENT_HOST` | `127.0.0.1` |
+| `MULTI_AGENT_HOST` | `0.0.0.0` |
 | `MULTI_AGENT_PORT` | `5010` |
 | `MULTI_AGENT_TOKEN` | Empty on loopback; minimum 32 characters required otherwise |
 | `OLLAMA_URL` | `http://localhost:11434` (native API origin, not `/v1`) |

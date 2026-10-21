@@ -22,7 +22,29 @@
                 <span class="ai-meta-label">Confidence:</span>
                 <span class="confidence-badge confidence-{{ (confidence | lower) if is_valid and confidence else 'none' }}">{{ confidence if is_valid and confidence else ("Waiting..." if loading else "None") }}</span>
             </div>
+            <div class="ai-meta-item">
+                <span class="ai-meta-label">Reviewer:</span>
+                {% if reviewer %}
+                {% set verdict_key = (reviewer.get('verdict') or reviewer.get('status') or '') | lower %}
+                <span class="reviewer-badge{% if verdict_key %} verdict-{{ verdict_key }}{% endif %}">{{ (reviewer.get('verdict') or reviewer.get('status', 'unavailable')) | replace('_', ' ') | capitalize | e }}</span>
+                {% else %}
+                <span class="ai-meta-value">{{ 'Waiting...' if loading else 'Unavailable' }}</span>
+                {% endif %}
+            </div>
         </div>
+        {% if reviewer %}
+        <div class="reviewer-feedback">
+            <p>{{ (reviewer.get('review') or reviewer.get('error') or 'Reviewer feedback is unavailable.') | e }}</p>
+            {% if reviewer.get('risks') %}
+            <strong>Risks</strong>
+            <ul>{% for risk in reviewer['risks'] %}<li>{{ risk | e }}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if reviewer.get('recommendations') %}
+            <strong>Recommendations</strong>
+            <ul>{% for recommendation in reviewer['recommendations'] %}<li>{{ recommendation | e }}</li>{% endfor %}</ul>
+            {% endif %}
+        </div>
+        {% endif %}
         <div class="ai-suggestion-feedback-section">
             <label for="ai-feedback-input">Feedback on this suggestion:</label>
             <textarea id="ai-feedback-input" class="ai-suggestion-feedback-input" 

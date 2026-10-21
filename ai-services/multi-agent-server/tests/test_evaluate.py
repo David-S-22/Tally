@@ -1,5 +1,7 @@
 import copy
 import json
+import os
+from unittest.mock import patch
 
 import evaluate
 import pytest
@@ -95,7 +97,8 @@ def test_runner_exports_and_reports_checks_without_human_decisions(
     monkeypatch.setattr(evaluate, "cases", lambda: [("text", {"task": "synthetic"})])
     monkeypatch.setattr(evaluate, "Agents", Reviewer)
     output = tmp_path / "new-evidence"
-    assert evaluate.main(["--output-dir", str(output)]) == 0
+    with patch.dict(os.environ, {"MULTI_AGENT_TOKEN": "a" * 32}):
+        assert evaluate.main(["--output-dir", str(output)]) == 0
     report = json.loads((output / "evaluation.json").read_text())
     assert (
         report["passed"]

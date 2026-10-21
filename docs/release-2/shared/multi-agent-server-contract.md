@@ -15,7 +15,9 @@ results through their own business validation. Feature integrations and UI are
 not included in this shared-service implementation.
 
 All endpoints require bearer authentication when `MULTI_AGENT_TOKEN` is set.
-Non-loopback binding requires a token. This is trusted backend-client access,
+The default binding is `0.0.0.0:5010`; non-loopback binding requires a token.
+The server entry point loads the repository-root `.env`, also used by Compose.
+This is trusted backend-client access,
 not multi-tenant authentication. Feature labels and reviewer names are not
 authorization claims. All callers with the token can access all workflows.
 
@@ -161,7 +163,7 @@ Routes and common result fields remain. Intentional differences:
 
 1. Real roles use native Ollama `OLLAMA_URL`, not the proposal's `/v1`
    `OLLAMA_BASE_URL`; default Planner/Worker are 3b, Reviewer 8b.
-2. Loopback by default; reachable binding requires a token. Clients must send it
+2. Binds to all interfaces by default; reachable binding requires a token. Clients must send it
    when enabled. Individual feature clients are owner-managed work; the earlier
    Bills-specific integration has been removed from this branch.
 3. Strict validation, reason requirements, safe failed-stage handling and
