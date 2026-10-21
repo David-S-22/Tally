@@ -268,6 +268,9 @@ services:
       OLLAMA_URL: http://ollama:11434/v1
       OLLAMA_MODEL: llama3.1:8b
       OLLAMA_CLASSIFIER_MODEL: qwen2.5:3b
+      MULTI_AGENT_URL: ${MULTI_AGENT_URL:-http://host.docker.internal:5010}
+      MULTI_AGENT_TOKEN: ${MULTI_AGENT_TOKEN:-}
+      MULTI_AGENT_TIMEOUT: ${MULTI_AGENT_TIMEOUT:-600}
       MCP_SERVER_URL: http://host.docker.internal:8000/mcp
       MCP_ENABLED: ${MCP_ENABLED:-true}
       RAG_ENABLED: ${RAG_ENABLED:-true}

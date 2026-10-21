@@ -1,5 +1,7 @@
 from datetime import date
 import json
+import os
+import requests
 from typing import Any
 from shared.backend import dto
 from .helpers import fetch_categories, fetch_feedbacks, fetch_goals, fetch_suggestions
@@ -7,9 +9,7 @@ from .ollama_service import (
     call_ai_to_select_tool,
     execute_mcp_tool,
     fetch_mcp_tools,
-    get_ai_text_and_calculate_confidence,
     load_prompt,
-    planner_model,
     search_model,
 )
 
@@ -133,7 +133,7 @@ def format_planner_prompt(
         "recent_suggestions_and_feedback": _format_past_suggestions(suggestions),
         "user_preferences_and_constraints": _format_feedback_for_planner(feedbacks, category_map),
     }
-    return f"User Financial Data:\n{json.dumps(tables, indent=2)}"
+    return f"User Financial Data:\n{json.dumps(tables, separators=(',', ':'))}"
 
 
 def generate_transaction_search_tool_call(
@@ -362,8 +362,8 @@ def _build_advice_prompt(
     return (
         f"{user_data}\n\n"
         f"{previous_block}"
-        f"Pre-Calculated Spending Summary by Merchant:\n{json.dumps(spending_summary, indent=2)}\n\n"
-        f"Retrieved Transactions:\n{json.dumps(formatted_transactions, indent=2)}\n\n"
+        f"Pre-Calculated Spending Summary by Merchant:\n{json.dumps(spending_summary, separators=(',', ':'))}\n\n"
+        f"Retrieved Transactions:\n{json.dumps(formatted_transactions, separators=(',', ':'))}\n\n"
         f"Retrieved Savings Advice Guidelines:\n{rag_context_blocks}\n\n"
         "Output 1 or 2 direct savings advice sentences in a single plain text paragraph. "
         "Start immediately with an action verb (e.g. 'Cancel...', 'Pause...', 'Trim...'). "
@@ -373,20 +373,76 @@ def _build_advice_prompt(
     )
 
 
+# Match the multi-agent server's stage input limit. Count JSON escaping and
+# UTF-8 bytes so this catches requests that exceed the actual serialized limit.
+SAVINGS_INPUT_BUDGET = 64 * 1024
+
+
+def generate_savings_suggestion(user_prompt: str, system_prompt: str) -> tuple[str, str, dict[str, Any]]:
+    """Send the gathered savings evidence through Planner, Worker and Reviewer."""
+    url = os.environ.get("MULTI_AGENT_URL", "http://localhost:5010").rstrip("/")
+    token = os.environ.get("MULTI_AGENT_TOKEN", "")
+    payload = {
+        "contract_version": "1.0",
+        "feature": "savings",
+        "task": system_prompt,
+        "evidence": [{
+            "source": "savings-context",
+            "summary": "Savings goals, preferences, spending and retrieved advice guidelines.",
+            "data": {"prompt": user_prompt},
+        }],
+    }
+    stage_input = {
+        "task": payload["task"],
+        "evidence": payload["evidence"],
+        "context": {},
+    }
+    if len(json.dumps(stage_input, allow_nan=False).encode("utf-8")) > SAVINGS_INPUT_BUDGET:
+        raise ValueError(
+            "Savings evidence exceeds the 64 KiB model input limit."
+        )
+    try:
+        response = requests.post(
+            f"{url}/workflow",
+            json=payload,
+            headers={"Authorization": f"Bearer {token}"} if token else {},
+            timeout=float(os.environ.get("MULTI_AGENT_TIMEOUT", "600")),
+        )
+    except requests.ConnectionError:
+        raise ValueError("The savings advice service is unavailable. Please try again shortly.") from None
+    # A reviewer failure can return 503 after the Worker has produced advice.
+    if response.status_code != 503:
+        response.raise_for_status()
+    workflow = response.json()
+    worker = workflow.get("worker_result") or {}
+    reviewer = workflow.get("reviewer_result") or {}
+    if worker.get("status") != "success":
+        response.raise_for_status()
+        raise ValueError("Multi-agent server did not return savings advice")
+
+    advice = worker.get("output")
+    if not isinstance(advice, str):
+        raise ValueError("Multi-agent server returned invalid savings advice")
+    confidence = worker.get("confidence")
+    if confidence not in ("High", "Medium", "Low"):
+        raise ValueError("Multi-agent server returned an invalid confidence level")
+    return advice, confidence, reviewer
+
+
 def generate_advice(
     goals: list[dto.Goal] | list[dict[str, Any]] | None,
     suggestions: list[dto.Suggestion] | list[dict[str, Any]] | None,
     feedbacks: list[dto.Feedback] | list[dict[str, Any]] | None,
     tx_url: str | None = None,
     previous_suggestion: str | None = None,
-) -> tuple[str, str | None, str | None]:
-    """Coordinates retrieval of transactions & RAG context via MCP and prompts the planner model to generate savings advice."""
+) -> tuple[str, str | None, str | None, dict[str, Any] | None]:
+    """Gather transactions and RAG context, then request multi-agent savings advice."""
     if not goals:
-        return "Insufficient context available to generate savings advice.", None, None
+        return "Insufficient context available to generate savings advice.", None, None, None
 
     transactions, tx_error = _fetch_filtered_transactions(feedbacks, tx_url=tx_url)
     if tx_error is not None or not transactions:
-        return tx_error or "You don't have any transactions yet. Add transactions using the transactions tab.", None, None
+        return tx_error or "You don't have any transactions yet. Add transactions using the transactions tab.", None, None, None
 
     categories = fetch_categories(tx_url)
     category_map = {category.id: category.name for category in categories} if categories else {}
@@ -395,7 +451,7 @@ def generate_advice(
 
     rag_guidelines = _fetch_rag_guidelines(goals)
     if not rag_guidelines:
-        return "Insufficient context available to generate savings advice.", None, None
+        return "Insufficient context available to generate savings advice.", None, None, None
     rag_context_blocks, sources_str = rag_guidelines
 
     user_data = format_planner_prompt(goals, suggestions, feedbacks, tx_url=tx_url)
@@ -407,27 +463,21 @@ def generate_advice(
         rag_context_blocks,
         previous_suggestion=previous_suggestion,
     )
-
-    raw_advice, confidence_category = get_ai_text_and_calculate_confidence(
-        user_prompt,
-        model=planner_model,
-        system_prompt=system_prompt,
-        temperature=0.6,
-    )
+    raw_advice, confidence_category, reviewer = generate_savings_suggestion(user_prompt, system_prompt)
 
     if not raw_advice or raw_advice.strip().lower().startswith("insufficient context"):
-        return "Insufficient context available to generate savings advice.", None, None
+        return "Insufficient context available to generate savings advice.", None, None, reviewer
 
     advice_lines = [line.strip() for line in raw_advice.strip().splitlines() if line.strip()]
     advice_paragraph = " ".join(advice_lines)
-    return advice_paragraph, sources_str, str(confidence_category)
+    return advice_paragraph, sources_str, confidence_category, reviewer
 
 
 def generate_savings_advice(
     db_url: str,
     tx_url: str | None = None,
     previous_suggestion: str | None = None,
-) -> tuple[str, str | None, str | None]:
+) -> tuple[str, str | None, str | None, dict[str, Any] | None]:
     """Top-level entry point to fetch data and generate personalized savings advice."""
     try:
         goals = fetch_goals(db_url, active_only=True, top=3)
@@ -435,6 +485,7 @@ def generate_savings_advice(
             return (
                 "You don't have any active savings goals yet. "
                 "Add a goal in the Savings Goals table to receive personalized, adaptive savings advice!",
+                None,
                 None,
                 None,
             )
@@ -446,11 +497,11 @@ def generate_savings_advice(
             latest = suggestions[-1]
             previous_suggestion = _get_item_field(latest, "suggestion", None)
 
-        advice, sources, confidence = generate_advice(
+        advice, sources, confidence, reviewer = generate_advice(
             goals, suggestions, feedbacks, tx_url=tx_url, previous_suggestion=previous_suggestion
         )
         if advice:
-            return advice, sources, confidence
-        return "Error: Could not generate AI savings suggestion (empty response received from AI model).", None, None
+            return advice, sources, confidence, reviewer
+        return "Error: Could not generate AI savings suggestion (empty response received from AI model).", None, None, reviewer
     except Exception as e:
-        return f"Error: Could not generate AI savings suggestion ({e}).", None, None
+        return f"Error: Could not generate AI savings suggestion ({e}).", None, None, None

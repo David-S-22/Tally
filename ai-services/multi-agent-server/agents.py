@@ -11,6 +11,7 @@ import ollama
 from contracts import ROLE_SCHEMAS, WorkflowError, validate
 
 logger = logging.getLogger(__name__)
+MAX_STAGE_INPUT_BYTES = 64 * 1024
 
 
 class AgentError(Exception):
@@ -89,7 +90,7 @@ class Ollama:
                 format=schema,
                 stream=False,
                 logprobs=True,
-                options={"temperature": 0, "num_predict": 2048, "num_ctx": 8192},
+                options={"temperature": 0, "num_predict": 2048, "num_ctx": 32768},
             )
         )
         if not response.message or not isinstance(response.message.content, str):
@@ -134,10 +135,10 @@ class Agents:
         ).hexdigest()[:16]
 
     def run(self, role, payload, deadline):
-        if len(json.dumps(payload, allow_nan=False).encode("utf-8")) > 16384:
+        if len(json.dumps(payload, allow_nan=False).encode("utf-8")) > MAX_STAGE_INPUT_BYTES:
             raise AgentError(
                 "context_limit",
-                "Combined stage input exceeds 16 KiB; provide more concise evidence",
+                "Combined stage input exceeds 64 KiB; reduce the supplied evidence",
             )
         messages = [
             {"role": "system", "content": self.prompts[role]},

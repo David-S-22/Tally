@@ -374,7 +374,7 @@ def test_sdk_uses_native_api_schema_options_and_bounds_responses(monkeypatch):
     assert requests[0].url.path == "/api/chat"
     assert body["format"] == ROLE_SCHEMAS["planner"]
     assert body["logprobs"] is True
-    assert body["options"]["num_ctx"] == 8192 and body["stream"] is False
+    assert body["options"]["num_ctx"] == 32768 and body["stream"] is False
 
     def oversized(**kwargs):
         return real_client(

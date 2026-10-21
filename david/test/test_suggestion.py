@@ -1,10 +1,14 @@
 from datetime import datetime
 import json
 import math
+import os
+from unittest.mock import patch
 from typing import Any
 import httpx
 import pytest
+import requests
 import responses
+from responses import matchers
 
 from backend.savings_service import suggestion_service, ollama_service
 from backend.savings_service.suggestion_service import (
@@ -24,6 +28,7 @@ from backend.savings_service.suggestion_service import (
     generate_advice,
     generate_context_retrieval_args,
     generate_savings_advice,
+    generate_savings_suggestion,
     generate_transaction_search_tool_call,
 )
 from shared.backend import dto
@@ -111,14 +116,12 @@ class MockAIState:
 @pytest.fixture
 def ai_state():
     state = MockAIState()
-    orig_client = ollama_service.client
-    ollama_service.client = ollama_service.OpenAI(
+    with patch.object(ollama_service, "client", ollama_service.OpenAI(
         base_url="http://mock-ollama/v1",
         api_key="ollama",
         http_client=httpx.Client(transport=httpx.MockTransport(state.handler)),
-    )
-    yield state
-    ollama_service.client = orig_client
+    )):
+        yield state
 
 
 class MockMCPState:
@@ -147,22 +150,42 @@ class MockMCPState:
 @pytest.fixture
 def mcp_state():
     state = MockMCPState()
-    orig_sugg_exec = suggestion_service.execute_mcp_tool
-    orig_sugg_fetch = suggestion_service.fetch_mcp_tools
-    orig_ollama_exec = ollama_service.execute_mcp_tool
-    orig_ollama_fetch = ollama_service.fetch_mcp_tools
+    with (
+        patch.object(suggestion_service, "execute_mcp_tool", side_effect=state.execute),
+        patch.object(suggestion_service, "fetch_mcp_tools", side_effect=state.fetch),
+        patch.object(ollama_service, "execute_mcp_tool", side_effect=state.execute),
+        patch.object(ollama_service, "fetch_mcp_tools", side_effect=state.fetch),
+    ):
+        yield state
 
-    suggestion_service.execute_mcp_tool = state.execute
-    suggestion_service.fetch_mcp_tools = state.fetch
-    ollama_service.execute_mcp_tool = state.execute
-    ollama_service.fetch_mcp_tools = state.fetch
 
-    yield state
+class MockWorkflowState:
+    def __init__(self):
+        self.response_text = "Trim dining costs by $40 to reach your goal."
+        self.last_prompt = None
 
-    suggestion_service.execute_mcp_tool = orig_sugg_exec
-    suggestion_service.fetch_mcp_tools = orig_sugg_fetch
-    ollama_service.execute_mcp_tool = orig_ollama_exec
-    ollama_service.fetch_mcp_tools = orig_ollama_fetch
+    def handler(self, request):
+        body = json.loads(request.body)
+        self.last_prompt = body["evidence"][0]["data"]["prompt"]
+        return 200, {}, json.dumps({
+            "status": "success",
+            "worker_result": {
+                "status": "success",
+                "output": self.response_text,
+                "confidence": "High",
+            },
+            "reviewer_result": {"status": "success", "verdict": "approve", "review": "Advice is supported by the supplied spending data.", "risks": [], "recommendations": []},
+        })
+
+
+@pytest.fixture
+def workflow_state():
+    state = MockWorkflowState()
+    responses.add_callback(
+        responses.POST, "http://localhost:5010/workflow", callback=state.handler,
+        content_type="application/json",
+    )
+    return state
 
 
 # ============================================================================
@@ -575,7 +598,7 @@ def test_fetch_filtered_transactions_retry_generic_filter(mcp_state: MockMCPStat
 # ============================================================================
 
 def test_generate_advice_no_goals():
-    advice, sources, confidence = generate_advice([], [], [])
+    advice, sources, confidence, reviewer = generate_advice([], [], [])
     assert advice == "Insufficient context available to generate savings advice."
     assert sources is None
     assert confidence is None
@@ -584,7 +607,7 @@ def test_generate_advice_no_goals():
 def test_generate_advice_no_transactions(mcp_state: MockMCPState):
     goals = [dto.Goal(id=1, name="Goal", cost=100, date=datetime.now())]
     mcp_state.transactions = []
-    advice, sources, confidence = generate_advice(goals, [], [])
+    advice, sources, confidence, reviewer = generate_advice(goals, [], [])
     assert "don't have any transactions yet" in advice
 
 
@@ -592,12 +615,12 @@ def test_generate_advice_insufficient_rag_guidelines(mcp_state: MockMCPState):
     goals = [dto.Goal(id=1, name="Goal", cost=100, date=datetime.now())]
     mcp_state.transactions = [{"id": 1, "merchant": "Shop", "amount": 10}]
     mcp_state.rag_docs = [{"text": "Short"}]  # < 30 chars
-    advice, sources, confidence = generate_advice(goals, [], [])
+    advice, sources, confidence, reviewer = generate_advice(goals, [], [])
     assert advice == "Insufficient context available to generate savings advice."
 
 
 @responses.activate
-def test_generate_advice_model_returns_insufficient_context(mcp_state: MockMCPState, ai_state: MockAIState):
+def test_generate_advice_handles_insufficient_context_from_mocked_server(mcp_state: MockMCPState, workflow_state: MockWorkflowState):
     responses.add(
         responses.GET,
         f"{TX_URL}/categories",
@@ -608,19 +631,16 @@ def test_generate_advice_model_returns_insufficient_context(mcp_state: MockMCPSt
     mcp_state.transactions = [{"id": 1, "merchant": "Cafe", "amount": 15}]
     mcp_state.rag_docs = [{"text": "A comprehensive guideline explaining that users should prioritize emergency funds."}]
 
-    ai_state.response_text = "Insufficient context to generate savings advice."
-    advice, sources, confidence = generate_advice(goals, [], [], tx_url=TX_URL)
+    workflow_state.response_text = "Insufficient context to generate savings advice."
+    advice, sources, confidence, reviewer = generate_advice(goals, [], [], tx_url=TX_URL)
     assert advice == "Insufficient context available to generate savings advice."
     assert sources is None
     assert confidence is None
 
 
 @responses.activate
-def test_generate_advice_success_verifies_real_pipeline_and_prompt(mcp_state: MockMCPState, ai_state: MockAIState):
-    """
-    Executes the REAL transaction formatting, merchant aggregation,
-    RAG guideline assembly, and prompt construction without any internal mocking.
-    """
+def test_generate_advice_builds_prompt_from_savings_data(mcp_state: MockMCPState, workflow_state: MockWorkflowState):
+    """Check the backend's prompt construction with MCP and HTTP calls mocked."""
     responses.add(
         responses.GET,
         f"{TX_URL}/categories",
@@ -639,9 +659,9 @@ def test_generate_advice_success_verifies_real_pipeline_and_prompt(mcp_state: Mo
         {"text": "Review discretionary dining spending and cook batch meals on weekends.", "metadata": {"source": "dining_tips.md"}},
     ]
 
-    ai_state.response_text = "Trim restaurant meals at Ramen Bar to save $80 towards your Japan Trip goal."
+    workflow_state.response_text = "Trim restaurant meals at Ramen Bar to save $80 towards your Japan Trip goal."
 
-    advice, sources, confidence = generate_advice(
+    advice, sources, confidence, reviewer = generate_advice(
         goals,
         suggestions,
         feedbacks,
@@ -653,31 +673,29 @@ def test_generate_advice_success_verifies_real_pipeline_and_prompt(mcp_state: Mo
     assert sources == "dining_tips.md"
     assert confidence == "High"
 
-    # CRITICAL: Verify that the prompt sent to the LLM was assembled by the REAL pipeline!
-    prompt_sent = ai_state.last_prompt
+    prompt_sent = workflow_state.last_prompt
     assert prompt_sent is not None
     assert "Japan Trip" in prompt_sent
     assert "Ramen Bar" in prompt_sent
-    assert "$80.00" in prompt_sent  # Merchant spending aggregation verified!
+    assert "$80.00" in prompt_sent
     assert "Previous Suggestion: \"Cut coffee spending\"" in prompt_sent
     assert "dining_tips.md" in prompt_sent or "discretionary dining" in prompt_sent
 
 
 @responses.activate
-def test_generate_advice_joins_multiline_output(mcp_state: MockMCPState, ai_state: MockAIState):
+def test_generate_advice_joins_multiline_output(mcp_state: MockMCPState, workflow_state: MockWorkflowState):
     responses.add(responses.GET, f"{TX_URL}/categories", json=[], status=200)
     goals = [dto.Goal(id=1, name="Car", cost=1000, date=datetime.now())]
     mcp_state.transactions = [{"id": 1, "merchant": "Gas", "amount": 50}]
     mcp_state.rag_docs = [{"text": "Review vehicle and transport expenses carefully to save on gas."}]
 
-    ai_state.response_text = "Trim gas expenses by taking public transport.\nThis saves $20 per week."
-    advice, sources, confidence = generate_advice(goals, [], [], tx_url=TX_URL)
-    # Verifies lines 421-422 multiline joining into a single paragraph!
+    workflow_state.response_text = "Trim gas expenses by taking public transport.\nThis saves $20 per week."
+    advice, sources, confidence, reviewer = generate_advice(goals, [], [], tx_url=TX_URL)
     assert advice == "Trim gas expenses by taking public transport. This saves $20 per week."
 
 
 # ============================================================================
-# Top-Level generate_savings_advice Full Integration
+# Savings advice with mocked external calls
 # ============================================================================
 
 @responses.activate
@@ -688,19 +706,15 @@ def test_generate_savings_advice_no_active_goals():
         json=[],
         status=200,
     )
-    advice, sources, confidence = generate_savings_advice(DB_URL, tx_url=TX_URL)
+    advice, sources, confidence, reviewer = generate_savings_advice(DB_URL, tx_url=TX_URL)
     assert "don't have any active savings goals yet" in advice
     assert sources is None
     assert confidence is None
 
 
 @responses.activate
-def test_generate_savings_advice_success_end_to_end(mcp_state: MockMCPState, ai_state: MockAIState):
-    """
-    Executes the entire generate_savings_advice flow:
-    DB fetches -> Category fetches -> MCP data -> Pipeline -> AI completion.
-    NO monkeypatching of generate_advice!
-    """
+def test_generate_savings_advice_uses_fetched_data_and_mocked_advice(mcp_state: MockMCPState, workflow_state: MockWorkflowState):
+    """Check data fetching and advice handling with external services mocked."""
     responses.add(
         responses.GET,
         f"{DB_URL}/goals?active_only=true&top=3",
@@ -733,19 +747,19 @@ def test_generate_savings_advice_success_end_to_end(mcp_state: MockMCPState, ai_
         {"text": "Reduce delivery app spending and prepare home-cooked dinners.", "metadata": {"source": "takeaway_guide.md"}},
     ]
 
-    ai_state.response_text = "Pause UberEats delivery orders to save $60 for your New Laptop."
+    workflow_state.response_text = "Pause UberEats delivery orders to save $60 for your New Laptop."
 
-    advice, sources, confidence = generate_savings_advice(DB_URL, tx_url=TX_URL)
+    advice, sources, confidence, reviewer = generate_savings_advice(DB_URL, tx_url=TX_URL)
     assert advice == "Pause UberEats delivery orders to save $60 for your New Laptop."
     assert sources == "takeaway_guide.md"
     assert confidence == "High"
 
     # Verifies that previous_suggestion was automatically forwarded from the latest suggestion
-    assert "Previous Suggestion: \"Cut coffee runs\"" in (ai_state.last_prompt or "")
+    assert "Previous Suggestion: \"Cut coffee runs\"" in (workflow_state.last_prompt or "")
 
 
 @responses.activate
-def test_generate_savings_advice_handles_empty_ai_response(mcp_state: MockMCPState, ai_state: MockAIState):
+def test_generate_savings_advice_handles_empty_ai_response(mcp_state: MockMCPState, workflow_state: MockWorkflowState):
     responses.add(
         responses.GET,
         f"{DB_URL}/goals?active_only=true&top=3",
@@ -759,9 +773,8 @@ def test_generate_savings_advice_handles_empty_ai_response(mcp_state: MockMCPSta
     mcp_state.transactions = [{"id": 1, "merchant": "Store", "amount": 10}]
     mcp_state.rag_docs = [{"text": "Save money by creating a detailed monthly spreadsheet."}]
 
-    # Empty response is handled by generate_advice line 418 as insufficient context
-    ai_state.response_text = ""
-    advice, sources, confidence = generate_savings_advice(DB_URL, tx_url=TX_URL)
+    workflow_state.response_text = ""
+    advice, sources, confidence, reviewer = generate_savings_advice(DB_URL, tx_url=TX_URL)
     assert advice == "Insufficient context available to generate savings advice."
     assert sources is None
     assert confidence is None
@@ -780,15 +793,11 @@ def test_generate_savings_advice_empty_advice_fallback():
     responses.add(responses.GET, f"{DB_URL}/suggestions", json=[], status=200)
     responses.add(responses.GET, f"{TX_URL}/categories", json=[], status=200)
 
-    orig_gen = suggestion_service.generate_advice
-    suggestion_service.generate_advice = lambda goals, suggestions, feedbacks, tx_url=None, previous_suggestion=None: ("", None, None)
-    try:
-        advice, sources, confidence = generate_savings_advice(DB_URL, tx_url=TX_URL)
+    with patch.object(suggestion_service, "generate_advice", return_value=("", None, None, None)):
+        advice, sources, confidence, reviewer = generate_savings_advice(DB_URL, tx_url=TX_URL)
         assert advice == "Error: Could not generate AI savings suggestion (empty response received from AI model)."
         assert sources is None
         assert confidence is None
-    finally:
-        suggestion_service.generate_advice = orig_gen
 
 
 @responses.activate
@@ -804,14 +813,182 @@ def test_generate_savings_advice_exception_fallback():
     responses.add(responses.GET, f"{DB_URL}/suggestions", json=[], status=200)
     responses.add(responses.GET, f"{TX_URL}/categories", json=[], status=200)
 
-    orig_gen = suggestion_service.generate_advice
-    def boom(*args, **kwargs):
-        raise RuntimeError("Unexpected pipeline failure")
-    suggestion_service.generate_advice = boom
-    try:
-        advice, sources, confidence = generate_savings_advice(DB_URL, tx_url=TX_URL)
+    with patch.object(suggestion_service, "generate_advice", side_effect=RuntimeError("Unexpected pipeline failure")):
+        advice, sources, confidence, reviewer = generate_savings_advice(DB_URL, tx_url=TX_URL)
         assert "Error: Could not generate AI savings suggestion (Unexpected pipeline failure)." in advice
         assert sources is None
         assert confidence is None
-    finally:
-        suggestion_service.generate_advice = orig_gen
+
+
+@pytest.fixture
+def workflow_response(multi_agent_env):
+    return {
+        "status": "success",
+        "worker_result": {
+            "status": "success",
+            "output": "Trim dining costs to save $40 for your Japan Trip.",
+            "confidence": "High",
+        },
+        "reviewer_result": {"status": "success", "verdict": "approve", "review": "Advice is supported by the supplied spending data.", "risks": [], "recommendations": []},
+    }
+
+
+@pytest.fixture
+def multi_agent_env():
+    with patch.dict(os.environ, {
+        "MULTI_AGENT_URL": "http://multi-agent:5010/",
+        "MULTI_AGENT_TOKEN": "",
+        "MULTI_AGENT_TIMEOUT": "600",
+    }):
+        yield
+
+
+@responses.activate
+@pytest.mark.parametrize("confidence", ["High", "Medium", "Low"])
+def test_generate_savings_suggestion_sends_evidence_and_reads_mocked_response(workflow_response, confidence):
+    """Check the backend request and response parsing; the server is mocked."""
+    workflow_response["worker_result"]["confidence"] = confidence
+    responses.post(
+        "http://multi-agent:5010/workflow", json=workflow_response,
+        match=[matchers.request_kwargs_matcher({"timeout": 600.0})],
+    )
+
+    advice, level, reviewer = generate_savings_suggestion("Goals and spending evidence", "Write savings advice")
+
+    assert advice == workflow_response["worker_result"]["output"]
+    assert level == confidence
+    assert reviewer == workflow_response["reviewer_result"]
+    request = responses.calls[0].request
+    assert "Authorization" not in request.headers
+    assert json.loads(request.body) == {
+        "contract_version": "1.0",
+        "feature": "savings",
+        "task": "Write savings advice",
+        "evidence": [{
+            "source": "savings-context",
+            "summary": "Savings goals, preferences, spending and retrieved advice guidelines.",
+            "data": {"prompt": "Goals and spending evidence"},
+        }],
+    }
+
+
+@responses.activate
+def test_generate_savings_suggestion_sends_configured_auth_and_timeout(workflow_response):
+    responses.post(
+        "http://multi-agent:5010/workflow", json=workflow_response,
+        match=[
+            matchers.header_matcher({"Authorization": "Bearer test-token"}),
+            matchers.request_kwargs_matcher({"timeout": 650.0}),
+        ],
+    )
+    with patch.dict(os.environ, {"MULTI_AGENT_TOKEN": "test-token", "MULTI_AGENT_TIMEOUT": "650"}):
+        generate_savings_suggestion("Evidence", "Task")
+
+
+@responses.activate
+@pytest.mark.parametrize("changes", [
+    {"worker_result": None},
+    {"worker_result": {"status": "timeout"}},
+])
+def test_generate_savings_suggestion_rejects_response_without_worker_advice(workflow_response, changes):
+    workflow_response.update(changes)
+    responses.post("http://multi-agent:5010/workflow", json=workflow_response)
+    with pytest.raises(ValueError, match="did not return savings advice"):
+        generate_savings_suggestion("Evidence", "Task")
+
+
+@responses.activate
+@pytest.mark.parametrize("verdict", ["approve", "approve_with_changes", "reject"])
+def test_generate_savings_suggestion_returns_mocked_review_without_enforcing_verdict(workflow_response, verdict):
+    workflow_response["reviewer_result"].update({
+        "verdict": verdict,
+        "review": "Consider whether this spending change suits your needs.",
+        "risks": ["This may affect your transport options."],
+        "recommendations": ["Check alternatives before cancelling."],
+    })
+    responses.post("http://multi-agent:5010/workflow", json=workflow_response)
+
+    advice, confidence, reviewer = generate_savings_suggestion("Evidence", "Task")
+
+    assert advice == workflow_response["worker_result"]["output"]
+    assert confidence == "High"
+    assert reviewer == workflow_response["reviewer_result"]
+
+
+@responses.activate
+@pytest.mark.parametrize("status", ["error", "timeout"])
+def test_generate_savings_suggestion_preserves_worker_advice_when_mocked_reviewer_fails(workflow_response, status):
+    workflow_response["status"] = "error"
+    workflow_response["reviewer_result"] = {"status": status, "error": "Reviewer could not complete its review."}
+    responses.post("http://multi-agent:5010/workflow", json=workflow_response, status=503)
+
+    advice, confidence, reviewer = generate_savings_suggestion("Evidence", "Task")
+
+    assert advice == workflow_response["worker_result"]["output"]
+    assert confidence == "High"
+    assert reviewer == workflow_response["reviewer_result"]
+
+
+@responses.activate
+def test_generate_savings_suggestion_preserves_advice_when_review_is_missing(workflow_response):
+    workflow_response["reviewer_result"] = None
+    responses.post("http://multi-agent:5010/workflow", json=workflow_response)
+
+    advice, confidence, reviewer = generate_savings_suggestion("Evidence", "Task")
+
+    assert advice == workflow_response["worker_result"]["output"]
+    assert confidence == "High"
+    assert reviewer == {}
+
+
+@responses.activate
+@pytest.mark.parametrize("confidence", [None, "", "Certain", 0.9])
+def test_generate_savings_suggestion_rejects_missing_or_invalid_confidence(workflow_response, confidence):
+    workflow_response["worker_result"]["confidence"] = confidence
+    responses.post("http://multi-agent:5010/workflow", json=workflow_response)
+    with pytest.raises(ValueError, match="invalid confidence"):
+        generate_savings_suggestion("Evidence", "Task")
+
+
+@responses.activate
+def test_generate_savings_suggestion_rejects_invalid_advice_in_response(workflow_response):
+    workflow_response["worker_result"]["output"] = {"advice": "Unexpected object"}
+    responses.post("http://multi-agent:5010/workflow", json=workflow_response)
+    with pytest.raises(ValueError, match="invalid savings advice"):
+        generate_savings_suggestion("Evidence", "Task")
+
+
+@responses.activate
+@pytest.mark.parametrize("status", [400, 401, 503])
+def test_generate_savings_suggestion_propagates_http_errors_without_retrying(status, multi_agent_env):
+    responses.post("http://multi-agent:5010/workflow", json={"status": "error"}, status=status)
+    with pytest.raises(requests.HTTPError):
+        generate_savings_suggestion("Evidence", "Task")
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_generate_savings_suggestion_reports_connection_failure_without_network_details(multi_agent_env):
+    responses.post(
+        "http://multi-agent:5010/workflow",
+        body=requests.ConnectionError("HTTPConnectionPool: internal connection details"),
+    )
+    with pytest.raises(ValueError) as error:
+        generate_savings_suggestion("Evidence", "Task")
+    assert str(error.value) == "The savings advice service is unavailable. Please try again shortly."
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_generate_savings_suggestion_does_not_retry_timed_out_request(multi_agent_env):
+    responses.post("http://multi-agent:5010/workflow", body=requests.Timeout("Workflow timed out"))
+    with pytest.raises(requests.Timeout):
+        generate_savings_suggestion("Evidence", "Task")
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_generate_savings_suggestion_rejects_non_json_response(multi_agent_env):
+    responses.post("http://multi-agent:5010/workflow", body="Invalid JSON")
+    with pytest.raises(ValueError):
+        generate_savings_suggestion("Evidence", "Task")

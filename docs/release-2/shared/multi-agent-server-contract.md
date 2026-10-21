@@ -15,7 +15,9 @@ results through their own business validation. Feature integrations and UI are
 not included in this shared-service implementation.
 
 All endpoints require bearer authentication when `MULTI_AGENT_TOKEN` is set.
-Non-loopback binding requires a token. This is trusted backend-client access,
+The default binding is `0.0.0.0:5010`; non-loopback binding requires a token.
+The server entry point loads the repository-root `.env`, also used by Compose.
+This is trusted backend-client access,
 not multi-tenant authentication. Feature labels and reviewer names are not
 authorization claims. All callers with the token can access all workflows.
 
@@ -58,12 +60,12 @@ savings, anomalies, bills, budgets; it does not select server business logic.
 `contract_version` is optional for existing clients and must be `1.0` if sent.
 Task limit: 4,000 characters. Evidence: at most 32 items, unique non-blank
 source IDs (200 characters), non-blank summaries (4,000 characters), optional
-JSON `data`. Context: object, at most 8 KiB. HTTP and validated JSON are limited
-to 64 KiB, nesting to 12 levels; NaN/infinity are rejected. JSON serialization
+JSON `data`. Context: object, at most 8 KiB. HTTP is limited to 96 KiB and
+validated JSON to 96 KiB, nesting to 12 levels; NaN/infinity are rejected. JSON serialization
 overhead counts toward limits.
 
 Combined input for each agent, including earlier agent outputs, is limited to
-16 KiB; exceeding it fails explicitly with `context_limit`, rather than silently
+64 KiB; exceeding it fails explicitly with `context_limit`, rather than silently
 truncating evidence. Keep evidence concise. Role outputs are also bounded by
 schemas and generation limits.
 
@@ -161,7 +163,7 @@ Routes and common result fields remain. Intentional differences:
 
 1. Real roles use native Ollama `OLLAMA_URL`, not the proposal's `/v1`
    `OLLAMA_BASE_URL`; default Planner/Worker are 3b, Reviewer 8b.
-2. Loopback by default; reachable binding requires a token. Clients must send it
+2. Binds to all interfaces by default; reachable binding requires a token. Clients must send it
    when enabled. Individual feature clients are owner-managed work; the earlier
    Bills-specific integration has been removed from this branch.
 3. Strict validation, reason requirements, safe failed-stage handling and

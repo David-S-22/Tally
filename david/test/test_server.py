@@ -1,4 +1,6 @@
 import json
+import os
+from unittest.mock import patch
 from datetime import datetime
 from flask import Flask
 from flask.testing import FlaskClient
@@ -8,7 +10,7 @@ import responses
 from responses import matchers
 
 from backend.savings_service.app import setup_app
-from backend.savings_service import ollama_service
+from backend.savings_service import ollama_service, suggestion_service
 from shared.backend import dto
 
 DB_URL = "http://savings-db:6002"
@@ -729,40 +731,71 @@ def test_get_ai_suggestion_no_goals(client: FlaskClient):
 
 
 @responses.activate
-@pytest.mark.usefixtures("app_ctx")
-def test_get_ai_suggestion_success_renders_advice():
-    """Verifies lines 236-247 successful render of generated advice, sources, and confidence."""
-    # Test through the Flask route by setting up app and responses
-    responses.add(
-        responses.GET,
+@pytest.mark.parametrize("reviewer, workflow_status", [
+    ({"status": "success", "verdict": "approve", "review": "Supported by the spending data."}, 200),
+    ({"status": "success", "verdict": "approve_with_changes", "review": "Check your needs first."}, 200),
+    ({
+        "status": "success", "verdict": "reject", "review": "This may not suit your needs.",
+        "risks": ["Transport may cost more."],
+        "recommendations": ["Compare alternatives before cancelling."],
+    }, 200),
+    ({"status": "error", "error": "Reviewer could not complete its review."}, 503),
+    (None, 200),
+])
+def test_get_ai_suggestion_displays_mocked_review_and_keeps_human_actions_enabled(client, reviewer, workflow_status):
+    responses.get(
         f"{DB_URL}/goals?active_only=true&top=3",
         json=[{"id": 1, "name": "Emergency Fund", "cost": 1000, "date": "2026-12-31T00:00:00"}],
-        status=200,
     )
-    responses.add(responses.GET, f"{DB_URL}/feedbacks", json=[], status=200)
-    responses.add(responses.GET, f"{DB_URL}/suggestions", json=[], status=200)
-    responses.add(responses.GET, f"{TX_URL}/categories", json=[], status=200)
+    responses.get(f"{DB_URL}/feedbacks", json=[])
+    responses.get(f"{DB_URL}/suggestions", json=[])
+    responses.get(f"{TX_URL}/categories", json=[])
+    responses.post("http://multi-agent:5010/workflow", status=workflow_status, json={
+        "status": "error" if workflow_status == 503 else "success",
+        "worker_result": {
+            "status": "success", "output": "Cook dinner at home to save $50 for your Emergency Fund.",
+            "confidence": "High",
+        },
+        "reviewer_result": reviewer,
+    })
+    with (
+        patch.dict(os.environ, {"MULTI_AGENT_URL": "http://multi-agent:5010"}),
+        patch.object(suggestion_service, "fetch_mcp_tools", return_value=[]),
+        patch.object(suggestion_service, "execute_mcp_tool", side_effect=[
+            [{"merchant": "Takeaway", "amount": 50}],
+            {"results": [{"text": "Reduce discretionary takeaway spending to support savings goals.", "metadata": {"source": "guide.md"}}]},
+        ]),
+    ):
+        response = client.get("/ai-suggestion")
 
-    test_app = setup_app(DB_URL, TX_URL)
-    test_app.config.update({"TESTING": True})
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Cook dinner at home to save $50" in html
+    assert "guide.md" in html
+    assert "High" in html
+    assert "Reviewer:" in html
+    if reviewer:
+        assert (reviewer.get("review") or reviewer["error"]) in html
+        for detail in reviewer.get("risks", []) + reviewer.get("recommendations", []):
+            assert detail in html
+        assert (reviewer.get("verdict") or reviewer["status"]).replace("_", " ").capitalize() in html
+    else:
+        assert "Unavailable" in html
+    assert 'hx-post="/savings-backend/ai-suggestion/action?accepted=true"' in html
+    assert 'hx-post="/savings-backend/ai-suggestion/action?accepted=false"' in html
 
-    # Hook suggestion_service.generate_savings_advice cleanly at the module level
-    from backend.savings_service import app as app_module
-    orig_generate = app_module.generate_savings_advice
-    app_module.generate_savings_advice = lambda db, tx_url=None, previous_suggestion=None: (
-        "Cook dinner at home 3 nights a week to save $50.",
-        "guide.md",
-        "High",
+
+@pytest.mark.usefixtures("app_ctx")
+def test_reviewer_feedback_is_html_escaped(app):
+    from flask import render_template
+
+    html = render_template(
+        "ai-suggestion.jinja", suggestion="Trim dining spending.", sources="guide.md", confidence="High",
+        reviewer={"verdict": "reject", "review": "<script>alert('review')</script>", "risks": ["<b>Risk</b>"], "recommendations": []},
     )
-    try:
-        with test_app.test_client() as client:
-            response = client.get("/ai-suggestion")
-            assert response.status_code == 200
-            html = response.get_data(as_text=True)
-            assert "Cook dinner at home 3 nights a week" in html
-            assert "High" in html
-    finally:
-        app_module.generate_savings_advice = orig_generate
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+    assert "&lt;b&gt;Risk&lt;/b&gt;" in html
 
 
 @pytest.mark.parametrize(
@@ -809,13 +842,14 @@ def test_action_ai_suggestion_missing_feedback(client: FlaskClient):
 
 @responses.activate
 @pytest.mark.usefixtures("app_ctx")
-def test_action_ai_suggestion_success_verifies_linked_suggestion_id(client: FlaskClient):
+@pytest.mark.parametrize("accepted", [True, False])
+def test_action_ai_suggestion_saves_human_decision_with_linked_feedback(client: FlaskClient, accepted):
     """
     CRITICAL TEST: Verifies that when saving suggestion decision:
     1. POST /suggestion receives the suggestion text and accepted decision.
     2. POST /feedback receives the EXACT created suggestion_id (42), and classified category/timeframe!
     """
-    suggestion_post_payload = {"suggestion": "Trim dining costs by $50.", "accepted": True}
+    suggestion_post_payload = {"suggestion": "Trim dining costs by $50.", "accepted": accepted}
     responses.add(
         responses.POST,
         f"{DB_URL}/suggestion",
@@ -844,7 +878,7 @@ def test_action_ai_suggestion_success_verifies_linked_suggestion_id(client: Flas
     )
 
     response = client.post(
-        "/ai-suggestion/action?accepted=true",
+        f"/ai-suggestion/action?accepted={str(accepted).lower()}",
         json={"suggestion": "Trim dining costs by $50.", "feedback": "I agree with trimming dining"},
     )
     assert response.status_code == 200
