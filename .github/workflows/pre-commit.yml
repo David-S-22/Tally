@@ -16,6 +16,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .pre-commit-config.yaml
       - name: Install pre-commit
         run: python -m pip install pre-commit
       - name: Run pre-commit hooks
