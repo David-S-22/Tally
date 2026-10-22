@@ -495,10 +495,7 @@ def generate_advice(
     return advice_paragraph, sources_str, confidence_category, reviewer
 
 
-AI_DISABLED_MESSAGE = (
-    "AI mode is turned off, so savings advice isn't available right now. "
-    "Everything else on this page still works."
-)
+AI_DISABLED_MESSAGE = "AI mode is turned off, so savings advice isn't available right now."
 
 
 def generate_savings_advice(
