@@ -1,5 +1,13 @@
+import os
 import pathlib
 import sys
+
+# AI mode is off by default so the cloud baseline makes no model calls. The suite
+# drives the planner, classifier and suggestion paths against a stubbed client,
+# so switch it on for the whole run. ollama_service.ai_mode_enabled() reads the
+# environment per call, so this needs no patching of the module.
+os.environ.setdefault("AI_MODE_ENABLED", "true")
+
 
 def add_to_path(path: pathlib.Path):
     path_str = str(path)
@@ -22,19 +30,3 @@ sys.modules["savings_service"] = backend.savings_service
 for sub in ["app", "helpers", "ollama_service", "classifier_service", "suggestion_service"]:
     mod = getattr(backend.savings_service, sub)
     sys.modules[f"savings_service.{sub}"] = mod
-
-
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def ai_mode_on(monkeypatch):
-    """Keep AI mode on unless a test switches it off.
-
-    ``AI_MODE_ENABLED`` defaults to false so the cloud baseline refuses model
-    calls, but the suite drives the planner, classifier and suggestion paths
-    against a stubbed client; the tests that assert the refusal turn it off.
-    """
-    from backend.savings_service import ollama_service
-
-    monkeypatch.setattr(ollama_service, "AI_MODE_ENABLED", True)
