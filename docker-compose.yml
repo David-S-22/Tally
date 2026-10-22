@@ -64,7 +64,7 @@ services:
       TRANSACTIONS_DB_URL: http://transactions-db:6001
       DATABASE_TIMEOUT_SECONDS: 20
       ANOMALIES_BACKEND_URL: http://anomalies-backend:5004
-      ANOMALIES_TIMEOUT_SECONDS: 10
+      ANOMALIES_TIMEOUT_SECONDS: 120
       OLLAMA_URL: http://ollama:11434
       CHAT_MODEL: qwen2.5:3b
       AGENT_MAX_ITERATIONS: 2
@@ -96,7 +96,7 @@ services:
       PORT: 6001
       DB_PATH: /app/data/transactions.db
       ANOMALIES_DB_URL: http://anomalies-db:6004/anomalies
-      ANOMALIES_TIMEOUT_SECONDS: 10
+      ANOMALIES_TIMEOUT_SECONDS: 120
       SAVINGS_DB_URL: http://savings-db:6002
     volumes:
       - transactions_data:/app/data
@@ -169,15 +169,19 @@ services:
       OLLAMA_MODEL: llama3.1:8b
       OLLAMA_LOG_LEVEL: DEBUG
       MCP_SERVER_URL: http://host.docker.internal:8000/mcp
+      MCP_TIMEOUT_SECONDS: 60
+      SERVICE_TIMEOUT_SECONDS: 120
+      OLLAMA_TIMEOUT_SECONDS: 600
+      ANOMALY_WAIT_SECONDS: 300
       RAG_ENABLED: ${RAG_ENABLED:-true}
       RAG_SERVER_URL: http://host.docker.internal:5003
       RAG_FEATURE: anomalies
       RAG_TOP_K: 3
-      RAG_TIMEOUT_SECONDS: 15
+      RAG_TIMEOUT_SECONDS: 60
       MULTI_AGENT_ENABLED: ${MULTI_AGENT_ENABLED:-true}
       MULTI_AGENT_SERVER_URL: ${MULTI_AGENT_URL:-http://host.docker.internal:5010}
       MULTI_AGENT_TOKEN: ${MULTI_AGENT_TOKEN:-}
-      MULTI_AGENT_TIMEOUT_SECONDS: ${MULTI_AGENT_TIMEOUT:-600}
+      MULTI_AGENT_TIMEOUT_SECONDS: ${MULTI_AGENT_TIMEOUT:-900}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -199,9 +203,9 @@ services:
       PORT: 6004
       DB_PATH: /app/data/anomalies.db
       TRANSACTIONS_DB_URL: http://transactions-db:6001
-      TRANSACTIONS_TIMEOUT_SECONDS: 10
+      TRANSACTIONS_TIMEOUT_SECONDS: 60
       RECONCILE_MAX_RETRIES: 30
-      RECONCILE_RETRY_DELAY_SECONDS: 2
+      RECONCILE_RETRY_DELAY_SECONDS: 5
     depends_on:
       transactions-db:
         condition: service_started

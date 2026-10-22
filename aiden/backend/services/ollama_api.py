@@ -159,4 +159,8 @@ def _extract_mean_confidence(response: Any) -> Optional[float]:
 
 @lru_cache(maxsize=1)
 def _get_client() -> OpenAI:
-    return OpenAI(base_url=config.OLLAMA_URL, api_key="ollama", timeout=180)
+    return OpenAI(
+        base_url=config.OLLAMA_URL,
+        api_key="ollama",
+        timeout=config.OLLAMA_TIMEOUT_SECONDS,
+    )

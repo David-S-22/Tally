@@ -22,10 +22,17 @@ It also sets `RAG_SERVER_URL` to the shared, retrieve-only RAG server at
 disabled with `RAG_ENABLED=false`. The RAG server is likewise not containerised.
 When `MULTI_AGENT_ENABLED=true`, the worker submits the transaction, reviewed
 examples, and RAG guidance to the shared Multi-Agent Server. The backend sends
-`MULTI_AGENT_TOKEN` only as a server-side bearer token and uses a 600-second
-default request timeout, above the shared server's 540-second workflow
-deadline. The direct Ollama review remains available when this integration is
-disabled.
+`MULTI_AGENT_TOKEN` only as a server-side bearer token and uses the timeout set
+by `MULTI_AGENT_TIMEOUT_SECONDS`; Compose sets it to 900 seconds, above the
+shared server's 540-second workflow deadline. The direct Ollama review remains
+available when this integration is disabled.
+
+Compose increases the anomaly-service request timeouts through
+`MCP_TIMEOUT_SECONDS` (60), `SERVICE_TIMEOUT_SECONDS` (120),
+`OLLAMA_TIMEOUT_SECONDS` (600), and `RAG_TIMEOUT_SECONDS` (60). It also sets
+`ANOMALY_WAIT_SECONDS` to 300 seconds for alert polling. The backend's existing
+defaults remain unchanged when these environment variables are not set; the
+nginx proxy timeout is 600 seconds.
 
 ## Agentic workflow
 

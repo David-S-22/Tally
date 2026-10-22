@@ -47,6 +47,9 @@ required:
 | `RECONCILE_MAX_RETRIES` | Number of polling attempts before giving up. |
 | `RECONCILE_RETRY_DELAY_SECONDS` | Delay between polling attempts. |
 
+The Compose deployment allows up to 60 seconds per transactions request and
+waits 5 seconds between retries.
+
 ## Routes
 
 | Method | Route | Purpose |
