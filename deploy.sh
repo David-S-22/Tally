@@ -162,7 +162,7 @@ update_container_apps() {
     done
 }
 
-TARGET="${1:-all}"
+TARGET="${1:-containers}"
 
 case "$TARGET" in
     --health|health)
@@ -184,7 +184,7 @@ case "$TARGET" in
         DEPLOY_CONTAINERS=false
         DEPLOY_VM=true
         ;;
-    --all|all|"")
+    --all|all)
         FAST_UPDATE=false
         DEPLOY_CONTAINERS=true
         DEPLOY_VM=true
@@ -193,8 +193,12 @@ case "$TARGET" in
         echo "Usage: ./deploy.sh [all | containers | update | vm | health]"
         echo ""
         echo "Options:"
-        echo "  all         Deploy Ollama VM, verify health, then deploy containers (default)"
-        echo "  containers  Deploy microservice containers via Bicep (skip VM)"
+        echo "  containers  Deploy microservice containers via Bicep, no Ollama VM (default)"
+        echo "              This is the required cloud baseline: AI mode, MCP, RAG"
+        echo "              and the Multi-Agent Server are all off."
+        echo "  all         Deploy Ollama VM, verify health, then deploy containers."
+        echo "              Optional AI topology, assessed under Bonus Marks only;"
+        echo "              pass enableAi=true to actually turn AI mode on."
         echo "  update      Fast update: rebuild, push, then update apps four at a time (skips Bicep)"
         echo "  vm          Deploy Ollama VM only and wait for health check"
         echo "  health      Check current health and models of the Ollama VM"
@@ -204,14 +208,10 @@ esac
 
 # --- Pre-flight Health Notice for Containers ---
 if [ "$DEPLOY_CONTAINERS" = true ] && [ "$DEPLOY_VM" = false ]; then
-    echo "==> Checking if Ollama VM is currently accessible..."
-    if check_ollama_health; then
-        echo "==> Ollama VM is online and healthy."
-    else
-        echo "WARNING: Ollama VM is currently unreachable."
-        echo "Container apps will deploy, but AI calls will fail until the VM is started."
-        echo "To start the VM: az vm start --resource-group $RESOURCE_GROUP --name $VM_NAME"
-    fi
+    echo "==> Baseline deployment: AI mode, MCP, RAG and Multi-Agent are off."
+    echo "    Backends refuse model calls with 503 ai_disabled; no Ollama VM is needed."
+    echo "    For the optional AI topology (Bonus Marks): ./deploy.sh all"
+    echo "    then redeploy with --parameters enableAi=true."
 fi
 
 # --- Step 1: Provision VM if requested ---

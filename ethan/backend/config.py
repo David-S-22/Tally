@@ -15,6 +15,9 @@ TRANSACTIONS_TIMEOUT_SECONDS = float(os.environ.get("TRANSACTIONS_TIMEOUT_SECOND
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434").rstrip("/")
 CHAT_MODEL = os.environ.get("CHAT_MODEL", "qwen2.5:3b")
 AI_TIMEOUT_SECONDS = float(os.environ.get("AI_TIMEOUT_SECONDS", "90"))
+# AI mode (direct Ollama calls); off unless switched on, like MCP/RAG below.
+AI_MODE_ENABLED = _flag("AI_MODE_ENABLED", False)
+
 MCP_ENABLED = _flag("MCP_ENABLED", False)
 MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://host.docker.internal:8000/mcp").rstrip("/")
 MCP_TIMEOUT_SECONDS = float(os.environ.get("MCP_TIMEOUT_SECONDS", "15"))

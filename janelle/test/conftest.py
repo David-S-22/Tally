@@ -4,6 +4,18 @@ from janelle.backend import config
 
 
 @fixture(autouse=True)
+def ai_mode_on(monkeypatch: MonkeyPatch):
+    """Keep AI mode on unless a test switches it off.
+
+    ``AI_MODE_ENABLED`` defaults to false so the cloud baseline refuses model
+    calls outright. The unit suite drives the planner and grounding paths
+    behind fake transports, so it needs the switch on; the tests that assert
+    the refusal turn it back off.
+    """
+    monkeypatch.setattr(config, "AI_MODE_ENABLED", True)
+
+
+@fixture(autouse=True)
 def mcp_disabled_by_default(monkeypatch: MonkeyPatch):
     """Keep MCP off unless a test switches it on.
 

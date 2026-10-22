@@ -29,7 +29,19 @@ class PromptResult:
     mean_confidence: Optional[float]
 
 
+class AIError(Exception):
+    """An AI-mode refusal or failure with a safe code; the message carries no upstream text."""
+
+    def __init__(self, code: str, message: Optional[str] = None):
+        self.code = code
+        self.message = message or "AI mode is disabled."
+        super().__init__(self.message)
+
+
 def prompt(*, system_prompt: str, user_prompt: str, model: str, temperature: float, output_tokens: int) -> PromptResult:
+    if not config.AI_MODE_ENABLED:
+        raise AIError("ai_disabled")
+
     # The client instance is cached between calls, as a singleton instance.
 
     client = _get_client()

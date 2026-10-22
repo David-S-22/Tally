@@ -42,6 +42,9 @@ def _ollama_api_base() -> str:
 
 
 def _ollama_status() -> str:
+    """"off" when AI mode is disabled (no probe is made), otherwise "up"/"down"."""
+    if not config.AI_MODE_ENABLED:
+        return "off"
     try:
         response = requests.get(f"{_ollama_api_base()}/api/tags", timeout=2)
         response.raise_for_status()
@@ -120,6 +123,7 @@ def create_app() -> Flask:
                 "transactions_categories_count": None if transactions_categories is None else len(transactions_categories),
                 "transactions_count": None if transactions_rows is None else len(transactions_rows),
                 "ollama": _ollama_status(),
+                "ai_mode": "enabled" if config.AI_MODE_ENABLED else "disabled",
                 "mcp_mode": "enabled" if config.MCP_ENABLED else "disabled",
                 "rag_mode": "enabled" if config.RAG_ENABLED else "disabled",
             }

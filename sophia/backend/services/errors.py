@@ -1,6 +1,7 @@
 """Exception types the service layer raises; each route protocol translates them."""
 
 MODE_MESSAGES = {
+    "ai_disabled": "AI mode is disabled.",
     "mcp_disabled": "MCP mode is disabled.",
     "rag_disabled": "RAG mode is disabled.",
     "mcp_connection": "The MCP server is unavailable.",
@@ -21,6 +22,7 @@ MODE_MESSAGES = {
 }
 
 MODE_STATUSES = {
+    "ai_disabled": 503,
     "mcp_disabled": 503,
     "rag_disabled": 503,
     "mcp_connection": 503,
@@ -57,7 +59,7 @@ class NotFound(ServiceError):
 
 
 class ModeError(ServiceError):
-    """An MCP/RAG/Multi-Agent refusal or failure with a safe code; the message never carries upstream text."""
+    """An AI/MCP/RAG/Multi-Agent refusal or failure with a safe code; the message never carries upstream text."""
 
     def __init__(self, code):
         super().__init__(MODE_MESSAGES[code], status=MODE_STATUSES[code], code=code)

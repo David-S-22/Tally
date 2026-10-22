@@ -75,6 +75,14 @@ updates and deletes, and verified against the database afterwards.
 Every response carries `agent` with the request ID, model, status, MCP tool
 calls, and a safe stage trace (`AGENT_TRACE_ENABLED`).
 
+With `AI_MODE_ENABLED=false` (the code default, and the cloud baseline) the
+planner refuses before any request: `create_plan` raises `ChatError` and
+`rag_answer.ask_model` raises `RAGError`, both surfacing as 503 `ai_disabled`,
+and `/health` reports `modes.ai: "disabled"`. Compose sets it to `true`, so
+local development is unchanged. This is a real switch rather than an absent
+Ollama — see
+[AI mode switch](../docs/release-2/shared/ai-mode-switch.md).
+
 ### MCP read path
 
 With `MCP_ENABLED=true`, read plans call `search_transactions` on the shared
@@ -153,6 +161,7 @@ An empty database is seeded with demo data on first start only.
 | `DATABASE_TIMEOUT_SECONDS` | `20` | Database HTTP timeout. |
 | `ANOMALIES_BACKEND_URL` | `http://anomalies-backend:5004` | Anomaly review service. |
 | `ANOMALIES_TIMEOUT_SECONDS` | `10` | Anomaly notification timeout. |
+| `AI_MODE_ENABLED` | `false` | AI mode switch: gates every Ollama call. Compose sets `true`; the cloud baseline leaves it off. |
 | `OLLAMA_URL` | `http://ollama:11434` | Ollama base URL. |
 | `CHAT_MODEL` | `qwen2.5:3b` | Planner model. |
 | `AI_TIMEOUT_SECONDS` | `90` | Ollama request timeout. |

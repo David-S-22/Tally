@@ -15,6 +15,9 @@ TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templat
 
 
 def _ollama_status():
+    """"off" when AI mode is disabled (no probe is made), otherwise "up"/"down"."""
+    if not config.AI_MODE_ENABLED:
+        return "off"
     try:
         response = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=2)
         return "up" if response.ok else "down"
@@ -61,7 +64,7 @@ def create_app():
                 "transactions_api": transactions_source,
                 "ollama": ollama,
                 "modes": {
-                    "ai": "enabled" if ollama == "up" else "unavailable",
+                    "ai": ("enabled" if ollama == "up" else "unavailable") if config.AI_MODE_ENABLED else "disabled",
                     "mcp": "enabled" if config.MCP_ENABLED else "disabled",
                     "rag": "enabled" if config.RAG_ENABLED else "disabled",
                     "multi_agent": "enabled" if config.MULTI_AGENT_ENABLED else "disabled",

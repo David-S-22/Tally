@@ -12,3 +12,17 @@ def add_to_path(path: pathlib.Path):
 
 add_to_path(pathlib.Path(__file__).resolve().parent.parent.parent)
 add_to_path(pathlib.Path(__file__).resolve().parent.parent)
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def ai_mode_on(monkeypatch):
+    """Keep AI mode on unless a test switches it off.
+
+    ``AI_MODE_ENABLED`` is absent-means-off so the cloud baseline refuses
+    model calls, but the suite drives the prompt path behind a mocked
+    transport; the tests that assert the refusal unset it again.
+    """
+    monkeypatch.setenv("AI_MODE_ENABLED", "true")

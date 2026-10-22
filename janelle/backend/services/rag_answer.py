@@ -166,7 +166,9 @@ def thresholds():
 
 
 def ask_model(question, survivors, category_names):
-    """Send the closed-set prompt to Ollama and return the reply text."""
+    """Send the closed-set prompt to Ollama and return the reply text; RAGError("ai_disabled") when AI mode is off."""
+    if not config.AI_MODE_ENABLED:
+        raise RAGError("ai_disabled")
     context_lines = "\n".join(
         f"[{index}] {excerpt(item['text'])}"
         for index, item in enumerate(survivors, start=1)

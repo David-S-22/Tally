@@ -16,6 +16,8 @@ def _environment_flag(name: str, default: bool = True, env: dict[str, str] | Non
         return default
     return val.strip().lower() in ("1", "true", "yes", "on")
 
+# AI mode (direct Ollama calls); off unless switched on, so the cloud baseline refuses.
+AI_MODE_ENABLED = _environment_flag("AI_MODE_ENABLED", False)
 MCP_ENABLED = _environment_flag("MCP_ENABLED", True)
 RAG_ENABLED = _environment_flag("RAG_ENABLED", True)
 MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/mcp")
@@ -26,6 +28,23 @@ search_model = os.environ.get("OLLAMA_TOOL_MODEL", "qwen2.5:3b")
 classifier_model = os.environ.get("OLLAMA_CLASSIFIER_MODEL", "qwen2.5:3b")
 
 client = OpenAI(base_url=OLLAMA_API_URL, api_key="ollama", timeout=OLLAMA_TIMEOUT)
+
+
+class AIError(Exception):
+    """An AI-mode refusal with a safe code; the message carries no upstream text."""
+
+    def __init__(self, code: str = "ai_disabled", message: str = "AI mode is disabled."):
+        self.code = code
+        self.message = message
+        self.status = 503
+        super().__init__(message)
+
+
+def _client() -> OpenAI:
+    """The Ollama-backed client; refuses when AI mode is off so no model call leaves the process."""
+    if not AI_MODE_ENABLED:
+        raise AIError()
+    return client
 
 
 def load_prompt(prompt_name: str) -> str:
@@ -52,7 +71,7 @@ def get_ai_text_response(
 ) -> str:
     """Sends a prompt to the AI model and returns its plain-text completion response."""
     messages = _format_messages(prompt, system_prompt=system_prompt)
-    resp = client.chat.completions.create(
+    resp = _client().chat.completions.create(
         model=model,
         messages=messages,
         temperature=temperature,
@@ -92,7 +111,7 @@ def get_ai_text_and_calculate_confidence(
 ) -> tuple[str, ConfidenceCategory]:
     """Prompts the AI model to generate text with token logprobs enabled, and calculates its confidence category."""
     messages = _format_messages(prompt, system_prompt=system_prompt)
-    resp = client.chat.completions.create(
+    resp = _client().chat.completions.create(
         model=model,
         messages=messages,
         temperature=temperature,
@@ -116,7 +135,7 @@ def get_ai_json_response(
 ) -> dict[str, Any]:
     """Prompts the AI model in JSON mode and parses the response into a Python dictionary."""
     messages = _format_messages(prompt, system_prompt=system_prompt)
-    resp = client.chat.completions.create(
+    resp = _client().chat.completions.create(
         model=model,
         messages=messages,
         temperature=temperature,
@@ -135,7 +154,7 @@ def get_ai_structured_json(
 ) -> dict[str, Any]:
     """Prompts the AI model with grammar-constrained JSON schema decoding and returns the parsed structured dictionary."""
     messages = _format_messages(prompt, system_prompt=system_prompt)
-    resp = client.chat.completions.create(
+    resp = _client().chat.completions.create(
         model=model,
         messages=messages,
         temperature=temperature,
@@ -164,7 +183,7 @@ def call_ai_to_select_tool(
     else:
         messages = _format_messages(prompt, system_prompt=system_prompt)
 
-    resp = client.chat.completions.create(
+    resp = _client().chat.completions.create(
         model=model,
         messages=messages,
         temperature=temperature,

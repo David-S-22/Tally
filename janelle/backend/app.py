@@ -37,7 +37,11 @@ def mode_error_response(error):
 
     A disabled switch is 503 with the disabled code; every other failure is
     502 with the generic unavailable code so no detail leaks to the client.
+    AI mode off is its own 503 ai_disabled, whichever client raised it.
     """
+    if error.code == "ai_disabled":
+        chat_error = ChatError("AI mode is disabled.", "ai_disabled", 503)
+        return jsonify(chat_error.to_dict()), chat_error.status
     if isinstance(error, mcp_client.MCPError):
         disabled_code, unavailable_code = "mcp_disabled", "mcp_unavailable"
         unavailable_message = "The MCP server is unavailable."
@@ -156,7 +160,7 @@ def setup_app(db_url: str) -> Flask:
             ok=True,
             container="transactions-backend",
             modes={
-                "ai": "enabled",
+                "ai": "enabled" if config.AI_MODE_ENABLED else "disabled",
                 "mcp": "enabled" if config.MCP_ENABLED else "disabled",
                 "rag": "enabled" if config.RAG_ENABLED else "disabled",
             },

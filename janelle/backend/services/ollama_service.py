@@ -10,6 +10,7 @@ from pathlib import Path
 import requests
 
 from .. import config
+from .chat_service import ChatError
 
 
 KEYS = {
@@ -163,6 +164,8 @@ FALLBACK = {
 
 
 def create_plan(message, categories, previous_observation=None):
+    if not config.AI_MODE_ENABLED:
+        raise ChatError("AI mode is disabled.", "ai_disabled", 503)
     try:
         response = requests.post(
             f"{config.OLLAMA_URL}/api/chat",

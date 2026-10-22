@@ -44,6 +44,9 @@ AGENT_REQUEST_TTL_SECONDS = max(
 AI_TIMEOUT_SECONDS = float(os.environ.get("AI_TIMEOUT_SECONDS", "90"))
 
 # MCP mode
+# AI mode (direct Ollama calls); off unless switched on, so the cloud baseline refuses.
+AI_MODE_ENABLED = _environment_flag("AI_MODE_ENABLED", False)
+
 MCP_ENABLED = _environment_flag("MCP_ENABLED", True)
 MCP_SERVER_URL = os.environ.get(
     "MCP_SERVER_URL",
