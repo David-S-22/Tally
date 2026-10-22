@@ -1,6 +1,6 @@
 # Sophia-CI test environment only. Runtime pins live in sophia/backend/requirements.txt and sophia/database/requirements.txt next to each Dockerfile; the root requirements.txt is not ours.
 Flask==3.1.3
-flask-cors==4.0.1
+flask-cors==6.0.0
 requests==2.34.2
 PyYAML==6.0.3
 pytest==9.1.1
