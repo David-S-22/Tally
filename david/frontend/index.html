@@ -34,11 +34,11 @@
             </div>
           </div>
 
-          <div class="dashboard-panel ai-suggestion-panel" id="ai-suggestion-container" hx-get="/savings-backend/ai-suggestion" hx-trigger="load" hx-target="#ai-suggestion-container" hx-swap="outerHTML">
+          <div class="dashboard-panel ai-suggestion-panel" id="ai-suggestion-container" hx-post="/savings-backend/ai-suggestion/jobs" hx-trigger="load" hx-target="#ai-suggestion-container" hx-swap="outerHTML">
             <div class="panel-header">
               <h2>AI Suggestion</h2>
               <button type="button" class="btn-refresh" 
-                      hx-get="/savings-backend/ai-suggestion" 
+                      hx-post="/savings-backend/ai-suggestion/jobs"
                       hx-target="#ai-suggestion-container" 
                       hx-indicator="#ai-suggestion-container" 
                       hx-swap="outerHTML">Refresh</button>
@@ -209,7 +209,7 @@
           (typeof requestPath === 'string' && requestPath.includes('/ai-suggestion'))
         );
 
-        if (isAiRefresh && container) {
+        if (isAiRefresh && container && !requestPath.includes('/ai-suggestion/jobs/')) {
           setAiSuggestionLoading(container);
         }
       });
@@ -226,13 +226,13 @@
         } catch (e) {}
         showError('Request failed (' + status + '): ' + (msg || 'Invalid request or server error'));
         const refreshBtn = document.querySelector('#ai-suggestion-container .btn-refresh');
-        if (refreshBtn) refreshBtn.disabled = false;
+        if (refreshBtn && !refreshBtn.closest('[aria-busy="true"]')) refreshBtn.disabled = false;
       });
 
       document.addEventListener('htmx:sendError', function() {
         showError('Network error: Unable to communicate with the server.');
         const refreshBtn = document.querySelector('#ai-suggestion-container .btn-refresh');
-        if (refreshBtn) refreshBtn.disabled = false;
+        if (refreshBtn && !refreshBtn.closest('[aria-busy="true"]')) refreshBtn.disabled = false;
       });
     </script>
   </body>

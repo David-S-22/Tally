@@ -399,7 +399,7 @@ def _build_advice_prompt(
     return prompt
 
 
-def generate_savings_suggestion(user_prompt: str, system_prompt: str) -> tuple[str, str, dict[str, Any] | None]:
+def generate_savings_suggestion(user_prompt: str, system_prompt: str, *, background: bool = False, sources: str | None = None) -> tuple[str, str, dict[str, Any] | None]:
     """Generate savings advice with Ollama directly or through the multi-agent workflow."""
     if not MULTI_AGENT_ENABLED:
         advice, confidence = get_ai_text_and_calculate_confidence(
@@ -422,6 +422,16 @@ def generate_savings_suggestion(user_prompt: str, system_prompt: str) -> tuple[s
             "data": {"prompt": user_prompt},
         }],
     }
+    if background:
+        payload["context"] = {"savings_sources": sources}
+        response = requests.post(
+            f"{url}/workflow/jobs", json=payload,
+            headers={"Authorization": f"Bearer {token}"} if token else {},
+            timeout=15,
+        )
+        response.raise_for_status()
+        return response.json()
+
     try:
         response = requests.post(
             f"{url}/workflow",
@@ -456,6 +466,7 @@ def generate_advice(
     feedbacks: list[dto.Feedback] | list[dict[str, Any]] | None,
     tx_url: str | None = None,
     previous_suggestion: str | None = None,
+    background: bool = False,
 ) -> tuple[str, str | None, str | None, dict[str, Any] | None]:
     """Gather transactions and RAG context, then request multi-agent savings advice."""
     if not goals:
@@ -484,6 +495,10 @@ def generate_advice(
         rag_context_blocks,
         previous_suggestion=previous_suggestion,
     )
+    if background and MULTI_AGENT_ENABLED:
+        return generate_savings_suggestion(
+            user_prompt, system_prompt, background=True, sources=sources_str,
+        )
     raw_advice, confidence_category, reviewer = generate_savings_suggestion(user_prompt, system_prompt)
 
     if not raw_advice or raw_advice.strip().lower().startswith("insufficient context"):
@@ -498,6 +513,7 @@ def generate_savings_advice(
     db_url: str,
     tx_url: str | None = None,
     previous_suggestion: str | None = None,
+    background: bool = False,
 ) -> tuple[str, str | None, str | None, dict[str, Any] | None]:
     """Top-level entry point to fetch data and generate personalized savings advice."""
     try:
@@ -517,6 +533,12 @@ def generate_savings_advice(
         if not previous_suggestion and suggestions:
             latest = suggestions[-1]
             previous_suggestion = _get_item_field(latest, "suggestion", None)
+
+        if background:
+            return generate_advice(
+                goals, suggestions, feedbacks, tx_url=tx_url,
+                previous_suggestion=previous_suggestion, background=True,
+            )
 
         advice, sources, confidence, reviewer = generate_advice(
             goals, suggestions, feedbacks, tx_url=tx_url, previous_suggestion=previous_suggestion

@@ -76,11 +76,77 @@ class Coordinator:
         finally:
             self.gate.release()
 
-    def _run(self, body, request_id):
+    def _create_record(self, body, request_id):
+        record = {
+            "contract_version": VERSION,
+            "status": "success",
+            "workflow_state": "running",
+            "workflow_id": str(uuid.uuid4()),
+            "feature": body["feature"],
+            "task": body["task"],
+            "context": body.get("context", {}),
+            "evidence": body["evidence"],
+            "timestamp": now_iso(),
+            "duration_ms": 0,
+            "request_id": request_id,
+            "participating_agents": list(AGENT_ORDER),
+            "planner_result": None,
+            "worker_result": None,
+            "reviewer_result": None,
+            "human_decision": {"required": True, "status": "not_ready"},
+            "prompt_version": self.agents.prompt_version,
+        }
+        self._save(record, None, self._event(record, "workflow_started"))
+        return record
+
+    def submit_workflow(self, body, request_id=None):
+        """Save the ID, then run the existing workflow outside the HTTP request."""
+        validate_request(body)
+        if body.get("options", {}).get("reuse_plan"):
+            raise WorkflowError(400, "Async submission does not support reuse_plan")
+        if not self.gate.acquire(blocking=False):
+            raise WorkflowError(503, "Workflow capacity reached; retry later", "workflow_busy")
+        try:
+            record = self._create_record(body, request_id)
+        except Exception:
+            self.gate.release()
+            raise
+        workflow_id = record["workflow_id"]
+
+        def run():
+            try:
+                self._run(body, request_id, prepared_id=workflow_id)
+            except Exception:
+                logger.exception("Background workflow failed workflow_id=%s", workflow_id)
+                failed, revision = self.store.get(workflow_id)
+                failed.update(status="error", workflow_state="failed",
+                              error="Background workflow failed", code="workflow_failure")
+                failed["human_decision"] = {
+                    "required": True, "status": "pending", "allowed_values": ["Reject"]
+                }
+                self._save(failed, revision, self._event(failed, "error", code="workflow_failure"))
+            finally:
+                self.gate.release()
+
+        try:
+            threading.Thread(target=run, daemon=True).start()
+        except Exception:
+            try:
+                record.update(status="error", workflow_state="failed",
+                              error="Could not start workflow", code="workflow_failure")
+                self._save(record, 0, self._event(record, "error", code="workflow_failure"))
+            finally:
+                self.gate.release()
+            raise
+        return workflow_id
+
+    def _run(self, body, request_id, prepared_id=None):
         started = time.monotonic()
         deadline = started + self.settings.workflow_timeout
         reuse = body.get("options", {}).get("reuse_plan")
-        if reuse:
+        if prepared_id:
+            record, revision = self.store.get(prepared_id)
+        elif reuse:
             record, revision = self.store.get(reuse)
             if record["workflow_state"] != "awaiting_evidence":
                 raise WorkflowError(
@@ -116,26 +182,8 @@ class Coordinator:
                 ),
             )
         else:
-            record = {
-                "contract_version": VERSION,
-                "status": "success",
-                "workflow_state": "running",
-                "workflow_id": str(uuid.uuid4()),
-                "feature": body["feature"],
-                "task": body["task"],
-                "context": body.get("context", {}),
-                "evidence": body["evidence"],
-                "timestamp": now_iso(),
-                "duration_ms": 0,
-                "request_id": request_id,
-                "participating_agents": list(AGENT_ORDER),
-                "planner_result": None,
-                "worker_result": None,
-                "reviewer_result": None,
-                "human_decision": {"required": True, "status": "not_ready"},
-                "prompt_version": self.agents.prompt_version,
-            }
-            revision = self._save(record, None, self._event(record, "workflow_started"))
+            record = self._create_record(body, request_id)
+            revision = 0
         roles = ["worker", "reviewer"] if reuse else ["planner", "worker", "reviewer"]
         if body.get("options", {}).get("plan_only"):
             roles = ["planner"]

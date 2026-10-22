@@ -102,6 +102,18 @@ def create_app(log_dir=None, settings=None, agent_runner=None):
         record = coordinator.run_workflow(request.get_json(), g.request_id)
         return jsonify(record), 503 if record["status"] == "error" else 200
 
+    @app.post("/workflow/jobs")
+    def submit_workflow():
+        job_id = coordinator.submit_workflow(request.get_json(), g.request_id)
+        return jsonify(job_id=job_id, workflow_state="running"), 202, {
+            "Location": f"/workflow/jobs/{job_id}", "Retry-After": "5"
+        }
+
+    @app.get("/workflow/jobs/<uuid:job_id>")
+    def get_workflow_job(job_id):
+        # Reuse the authoritative SQLite workflow record; reads never invoke models.
+        return jsonify(coordinator.get_workflow(str(job_id)))
+
     @app.post("/workflow/<workflow_id>/decision")
     def decision(workflow_id):
         return jsonify(coordinator.record_decision(workflow_id, request.get_json()))
