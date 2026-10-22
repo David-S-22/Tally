@@ -31,6 +31,7 @@ def post_anomaly():
     set_optional_field(anomaly, data, "is_confirmed_by_user", try_parse_bool)
     set_optional_field(anomaly, data, "confidence", try_parse_float)
     set_optional_field(anomaly, data, "sources", try_parse_string_list)
+    set_optional_field(anomaly, data, "workflow_id", str)
 
     db.session.add(anomaly)
     db.session.commit()
@@ -119,6 +120,7 @@ def setup_database(db_path: str):
         db.init_app(app)
         db.create_all()
         _migrate_add_sources_column()
+        _migrate_add_workflow_id_column()
 
 
 def _migrate_add_sources_column():
@@ -136,3 +138,13 @@ def _migrate_add_sources_column():
         connection.execute(
             text("ALTER TABLE anomaly ADD COLUMN sources JSON NOT NULL DEFAULT '[]'")
         )
+
+
+def _migrate_add_workflow_id_column():
+    """Add the optional shared-agent workflow reference to existing records."""
+    columns = {column["name"] for column in inspect(db.engine).get_columns("anomaly")}
+    if "workflow_id" in columns:
+        return
+
+    with db.engine.begin() as connection:
+        connection.execute(text("ALTER TABLE anomaly ADD COLUMN workflow_id TEXT"))

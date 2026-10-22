@@ -70,6 +70,9 @@
                 <option value="confirm">Confirm</option>
                 <option value="dismiss">Dismiss</option>
             </select>
+            <label for="review-reason">Reason</label>
+            <textarea id="review-reason" maxlength="4000" rows="3"></textarea>
+            <p id="review-error" role="alert" hidden></p>
             <div class="modal-actions">
                 <button type="button" class="btn-cancel" onclick="closeReviewModal()">Cancel</button>
                 <button type="button" class="btn-accept" onclick="submitReview()">Submit</button>

@@ -27,6 +27,7 @@
             data-sources="{{ anomaly.sources|join('\n')|e }}"
             data-confidence="{{ '%.1f'|format(anomaly.confidence * 100) if anomaly.confidence is not none else '' }}"
             data-confidence-level="{{ confidence_level or '' }}"
+            data-workflow-id="{{ anomaly.workflow_id or '' }}"
             onclick="openReviewModal(this)">Unreviewed<svg class="review-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="M11 2.5 13.5 5 6 12.5H3.5V10L11 2.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
     {% elif anomaly.is_confirmed_by_user %}<span class="status-badge status-accepted">Confirmed</span>
     {% else %}<span class="status-badge status-rejected">Dismissed</span>

@@ -28,7 +28,9 @@ locale-formatted date with weekday, merchant, amount, description, category
 name, and confidence level with percentage) in two columns, followed by a
 full-width suspected-reason row and a full-width sources row (the RAG
 reference-document chips, or a dash when none) before collecting the user's
-Confirm or Dismiss decision. Labels are styled as small uppercase
+Confirm or Dismiss decision. Shared-server findings also require a reason,
+which is sent with the decision; an error leaves the dialog open and the
+finding unreviewed so the user can retry. Labels are styled as small uppercase
 subheadings, with values emphasized in separate bordered cards. The dialog
 animates when opening and closing, and pressing Escape cancels the review.
 

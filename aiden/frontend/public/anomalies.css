@@ -108,6 +108,18 @@
     border: 1px solid var(--color-border, #cbd5e1);
     border-radius: 5px;
 }
+.modal textarea {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0.5rem;
+    resize: vertical;
+    background: var(--color-surface-alt, #ffffff);
+    color: var(--color-text, #1e293b);
+    border: 1px solid var(--color-border, #cbd5e1);
+    border-radius: 5px;
+    font: inherit;
+}
+.modal #review-error { color: #b91c1c; }
 .modal-actions { margin-top: 1.25rem; display: flex; gap: 0.5rem; justify-content: flex-end; }
 
 /* Review action buttons (matches the savings module palette). */

@@ -45,6 +45,11 @@ without requiring running containers or external services.
 This approach provides an integration-style test across the backend,
 anomalies database, and transactions database while keeping the test suite
 local and deterministic.
+Shared Multi-Agent workflow submission and human-decision calls are replaced
+with deterministic responses in focused tests. These cover bearer-token and
+timeout configuration, workflow-ID persistence, the `anomalies` feature
+label, decision propagation, and the rule that a failed shared decision does
+not update local review status.
 
 ## Database
 

@@ -1,7 +1,8 @@
 # Release 1 - Anomalies Software Architecture Design
 
 Release 1 extends the anomaly-detection feature with retrieval-augmented
-grounding (RAG) and MCP tool access. This document describes the individual
+grounding (RAG), MCP tool access, and optional shared Multi-Agent Server
+integration. This document describes the individual
 software architecture of the Anomalies feature: the shared frontend shell, the
 three Anomalies containers, the shared Ollama model host, and the host-side RAG
 and MCP servers.
@@ -11,9 +12,9 @@ and MCP servers.
 The feature is deployed through Docker Compose. It is composed of three
 Anomalies-owned containers (`anomalies-frontend`, `anomalies-backend`,
 `anomalies-db`), the shared `shared-frontend` shell, and the shared `ollama`
-model host. Two further services — the **RAG server** and the **MCP server** —
-run as host processes rather than Compose services and are reached over
-`host.docker.internal`.
+model host. The **RAG server**, **MCP server**, and optional **Multi-Agent
+Server** run as host processes rather than Compose services and are reached
+over `host.docker.internal`.
 
 ```mermaid
 flowchart TB
@@ -35,6 +36,7 @@ flowchart TB
     subgraph host["Host processes"]
         rag["RAG server<br/>:5003<br/>(retrieve-only)"]
         mcp["MCP server<br/>:8000/mcp"]
+        multi["Multi-Agent Server<br/>:5010"]
     end
 
     user --> shared
@@ -43,10 +45,11 @@ flowchart TB
 
     abe -->|"REST: persist / read anomalies"| adb
     abe -->|"read transaction detail"| tdb
-    abe -->|"OpenAI-compatible review"| ollama
+    abe -.->|"direct review when enabled"| ollama
     abe -->|"POST /retrieve (top-k)"| rag
+    abe -->|"reviewed examples"| mcp
+    abe -.->|"workflow + human decision<br/>(optional)"| multi
 
-    ollama -->|"reviewed-example tool calls"| mcp
     mcp -->|"join by transaction_id"| tdb
     mcp --> adb
 
@@ -93,6 +96,8 @@ dependencies are configured as:
 | `OLLAMA_URL` / `OLLAMA_MODEL` | `http://ollama:11434/v1`, `llama3.1:8b` | OpenAI-compatible model calls. |
 | `MCP_SERVER_URL` | `http://host.docker.internal:8000/mcp` | Reviewed-example tools (via the model). |
 | `RAG_SERVER_URL` / `RAG_FEATURE` / `RAG_TOP_K` | `http://host.docker.internal:5003`, `anomalies`, `3` | Retrieval grounding. |
+| `MULTI_AGENT_ENABLED` | `true` in Compose | Uses the shared Planner–Worker–Reviewer workflow when enabled. |
+| `MULTI_AGENT_SERVER_URL` / `MULTI_AGENT_TOKEN` / `MULTI_AGENT_TIMEOUT_SECONDS` | Host server URL, optional bearer token, `600` seconds | Authenticated workflow requests and human decisions; token stays backend-side. |
 
 A background worker processes the review queue so transaction creation is never
 blocked on model latency.
@@ -114,8 +119,9 @@ eventually consistent.
 
 `ollama` (port `11434`) is the shared model host for every feature. The
 Anomalies backend calls it through an OpenAI-compatible client using
-`llama3.1:8b`. During review, Ollama is the component that issues the MCP tool
-calls to retrieve reviewed examples.
+`llama3.1:8b` in direct-review mode. The backend retrieves reviewed examples
+from MCP before sending evidence to either Ollama or the optional Multi-Agent
+Server.
 
 ## RAG server (host process, :5003)
 
@@ -138,23 +144,25 @@ anomaly APIs, and exposes two reviewed-anomaly tools:
 | `get-transactions-with-confirmed-anomalies` | Transactions whose anomalies the user confirmed as suspicious. |
 | `get-transactions-with-rejected-anomalies` | Transactions whose anomalies the user rejected as false positives. |
 
-Each result joins the transaction and anomaly records by `transaction_id` and
-excludes anomalies whose transaction no longer exists. Confirmed results act as
-positive examples and rejected results as negative examples; the current
-transaction is still evaluated on its own supplied fields.
+The Anomalies backend calls these tools before classification. Each result joins
+the transaction and anomaly records by `transaction_id` and excludes anomalies
+whose transaction no longer exists. Confirmed results act as positive examples
+and rejected results as negative examples; the current transaction is still
+evaluated on its own supplied fields.
 
 ## Review flow
 
 1. The transactions backend relays a newly created transaction to
    `POST /check-transaction`, which queues it and returns immediately.
-2. A background worker sends the current transaction to Ollama, grounded with
-   RAG reference documents.
-3. Ollama calls both reviewed-anomaly MCP tools to retrieve prior decisions.
-4. Ollama evaluates the transaction and returns a structured JSON finding.
-5. The backend validates the finding and persists suspicious results, with a
-   confidence score, to the anomalies database.
-6. The frontend long-poll surfaces the result, and the user confirms or rejects
-   it — feeding the next review through the MCP tools.
+2. A background worker retrieves reviewed examples from MCP and RAG reference
+   guidance. With shared-server mode enabled, it sends the bounded evidence to
+   the shared Multi-Agent Server; otherwise it calls Ollama directly.
+3. The backend validates the Worker's structured finding and persists
+   suspicious results, including the workflow ID and RAG source names, to the
+   anomalies database.
+4. The frontend surfaces the result. A user decision and reason are recorded
+   against the shared workflow before the local anomaly status is updated,
+   feeding later reviews through the MCP examples.
 
 ## Related documentation
 
@@ -163,3 +171,4 @@ transaction is still evaluated on its own supplied fields.
 - [Backend documentation](../../../aiden/backend/README.md)
 - [Database documentation](../../../aiden/database/README.md)
 - [Test documentation](../../../aiden/test/README.md)
+- [Multi-Agent Server integration](../anomalies/multi-agent-server.md)

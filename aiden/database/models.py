@@ -19,6 +19,7 @@ class Anomaly(db.Model): # type: ignore[name-defined]
     is_confirmed_by_user: Mapped[bool] = mapped_column(nullable=True)
     confidence: Mapped[float] = mapped_column(nullable=True)
     sources: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    workflow_id: Mapped[str] = mapped_column(nullable=True)
 
     def to_dto(self):
         return dto.Anomaly(
@@ -28,4 +29,5 @@ class Anomaly(db.Model): # type: ignore[name-defined]
             self.is_confirmed_by_user,
             self.confidence,
             list(self.sources or []),
+            self.workflow_id,
         )
