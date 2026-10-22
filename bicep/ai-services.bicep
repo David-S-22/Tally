@@ -32,6 +32,8 @@ module host 'modules/python-service-vm.bicep' = {
       'MULTI_AGENT_HOST=0.0.0.0'
       'MULTI_AGENT_TOKEN=${multiAgentToken}'
       'MULTI_AGENT_LOG_DIR=/var/lib/tally/logs'
+      'AGENT_STEP_TIMEOUT_SECONDS=600'
+      'MULTI_AGENT_WORKFLOW_TIMEOUT_SECONDS=1800'
     ], '\n')
     adminPublicKey: adminPublicKey
     vmSize: vmSize
