@@ -14,74 +14,78 @@ SEED_BUDGETS = (
     ("2026-06", 540000, "closed"),
     ("2026-07", 550000, "closed"),
     ("2026-08", 548000, "closed"),
-    ("2026-09", 560000, "active"),
-    ("2026-10", 565000, "draft"),
+    ("2026-09", 560000, "closed"),
+    ("2026-10", 565000, "active"),
 )
 
-SEED_LINE_CATEGORIES = (
-    (30, "Housing"),
-    (31, "Fitness"),
-    (32, "Music subscriptions"),
-    (33, "Streaming subscriptions"),
-    (60, "Internet"),
-    (61, "Mobile"),
-    (62, "Utilities"),
-    (70, "Transport"),
-    (80, "Dining"),
-    (81, "Groceries"),
+SEED_LINE_TEMPLATES = (
+    (30, "Housing", 115000, 125000),
+    (81, "Groceries", 40000, 55000),
+    (80, "Dining", 20000, 30000),
+    (70, "Transport", 12000, 18000),
+    (62, "Utilities", 25000, 32000),
+    (60, "Internet", 8000, 9000),
+    (61, "Mobile", 5500, 7000),
+    (33, "Streaming subscriptions", 3000, 4500),
 )
 
-SEED_EVENT_LABELS = (
-    "Weekly grocery shop",
-    "Fuel top-up",
-    "Dinner with friends",
-    "Cinema night",
-    "Electricity bill",
-    "Pharmacy purchase",
-    "Clothing allowance",
-    "Streaming renewal",
-    "Weekend trip",
-    "Unexpected expense buffer",
+LINES_PER_BUDGET = len(SEED_LINE_TEMPLATES)
+
+CATEGORY_SLOT = {category: slot for slot, (_, category, _, _) in enumerate(SEED_LINE_TEMPLATES)}
+
+DEFAULT_EVENTS = (
+    (3, "Weekly grocery shop", "Groceries", 9000, 12000, "user", "confirmed"),
+    (14, "Fuel top-up", "Transport", 5000, 7000, "predicted", "planned"),
 )
 
-SEED_EVENT_SOURCES = (
-    "user",
-    "predicted",
-    "user",
-    "predicted",
-    "user",
-    "predicted",
-    "user",
-    "predicted",
-    "user",
-    "predicted",
-)
+SEED_EVENTS_BY_MONTH = {
+    "2026-08": (
+        (4, "Weekly grocery shop", "Groceries", 9000, 12000, "user", "confirmed"),
+        (9, "Electricity bill", "Utilities", 12000, 14000, "user", "confirmed"),
+        (16, "Dinner with friends", "Dining", 6000, 9000, "predicted", "confirmed"),
+        (23, "Fuel top-up", "Transport", 5000, 7000, "predicted", "planned"),
+    ),
+    "2026-09": (
+        (5, "Weekly grocery shop", "Groceries", 9000, 12000, "user", "confirmed"),
+        (12, "Water bill", "Utilities", 8000, 10000, "user", "confirmed"),
+        (19, "Birthday dinner", "Dining", 8000, 12000, "user", "confirmed"),
+        (26, "Weekend trip", "Transport", 15000, 22000, "predicted", "planned"),
+        (28, "Cinema night", "Dining", 3000, 5000, "predicted", "cancelled"),
+    ),
+    "2026-10": (
+        (24, "Weekly grocery shop", "Groceries", 12000, 16000, "user", "planned"),
+        (25, "Dinner with friends", "Dining", 8000, 12000, "user", "planned"),
+        (26, "Cinema night", "Dining", 3000, 4500, "predicted", "cancelled"),
+        (27, "Weekend trip", "Transport", 15000, 25000, "predicted", "planned"),
+        (28, "Electricity bill", "Utilities", 4000, 6000, "user", "confirmed"),
+        (30, "Fuel top-up", "Transport", 5000, 7000, "predicted", "planned"),
+        (31, "Halloween party supplies", "Dining", 3000, 5000, "predicted", "planned"),
+    ),
+}
 
-SEED_EVENT_STATUSES = (
-    "confirmed",
-    "planned",
-    "planned",
-    "planned",
-    "confirmed",
-    "planned",
-    "planned",
-    "confirmed",
-    "planned",
-    "planned",
-)
+SEED_PROPOSALS_BY_MONTH = {
+    "2026-01": (("Housing", 120000, 130000, "accepted"),),
+    "2026-02": (("Groceries", 42000, 57000, "rejected"),),
+    "2026-03": (("Dining", 21000, 31000, "accepted"),),
+    "2026-04": (("Transport", 12500, 18500, "rejected"),),
+    "2026-05": (("Utilities", 26000, 33000, "accepted"),),
+    "2026-06": (("Internet", 8500, 9500, "accepted"),),
+    "2026-07": (("Mobile", 6000, 7500, "rejected"),),
+    "2026-08": (("Groceries", 41000, 56000, "accepted"),),
+    "2026-09": (
+        ("Transport", 15000, 21000, "accepted"),
+        ("Dining", 18000, 27000, "rejected"),
+    ),
+    "2026-10": (
+        ("Groceries", 50000, 65000, "proposed"),
+        ("Transport", 14000, 20000, "proposed"),
+        ("Dining", 18000, 25000, "rejected"),
+    ),
+}
 
-SEED_PROPOSAL_STATUSES = (
-    "accepted",
-    "rejected",
-    "accepted",
-    "proposed",
-    "accepted",
-    "rejected",
-    "proposed",
-    "accepted",
-    "proposed",
-    "proposed",
-)
+
+def _line_id(budget_index: int, slot: int) -> int:
+    return (budget_index - 1) * LINES_PER_BUDGET + slot + 1
 
 
 def seed_database_if_empty():
@@ -89,6 +93,8 @@ def seed_database_if_empty():
         if any(_seed_counts().values()):
             return
 
+        event_id = 0
+        proposal_id = 0
         for index, budget_row in enumerate(SEED_BUDGETS, start=1):
             month, declared_income, budget_status = budget_row
             timestamp = f"{month}-01T09:00:00+00:00"
@@ -103,67 +109,68 @@ def seed_database_if_empty():
             db.session.add(budget)
             db.session.flush()
 
-            category_id, category = SEED_LINE_CATEGORIES[index - 1]
-            warn_at = 10000 + index * 1000
-            hard_cap = warn_at + 5000
-            budget_line = BudgetLine(
-                id=index,
-                budget_id=budget.id,
-                category_id=category_id,
-                category=category,
-                warn_at=warn_at,
-                hard_cap=hard_cap,
-                created_at=timestamp,
-                updated_at=timestamp,
-            )
-            db.session.add(budget_line)
+            for slot, (category_id, category, warn_at, hard_cap) in enumerate(SEED_LINE_TEMPLATES):
+                db.session.add(
+                    BudgetLine(
+                        id=_line_id(index, slot),
+                        budget_id=budget.id,
+                        category_id=category_id,
+                        category=category,
+                        warn_at=warn_at,
+                        hard_cap=hard_cap,
+                        created_at=timestamp,
+                        updated_at=timestamp,
+                    )
+                )
 
-            planned_event = PlannedEvent(
-                id=index,
-                budget_id=budget.id,
-                date=f"{month}-0{index if index < 10 else 9}",
-                label=SEED_EVENT_LABELS[index - 1],
-                category=category,
-                est_low=max(1000, warn_at - 2000),
-                est_high=warn_at,
-                source=SEED_EVENT_SOURCES[index - 1],
-                status=SEED_EVENT_STATUSES[index - 1],
-                created_at=timestamp,
-                updated_at=timestamp,
-            )
-            db.session.add(planned_event)
+            for day, label, category, est_low, est_high, source, status in SEED_EVENTS_BY_MONTH.get(
+                month, DEFAULT_EVENTS
+            ):
+                event_id += 1
+                db.session.add(
+                    PlannedEvent(
+                        id=event_id,
+                        budget_id=budget.id,
+                        date=f"{month}-{day:02d}",
+                        label=label,
+                        category=category,
+                        est_low=est_low,
+                        est_high=est_high,
+                        source=source,
+                        status=status,
+                        created_at=timestamp,
+                        updated_at=timestamp,
+                    )
+                )
 
-            proposal_status = SEED_PROPOSAL_STATUSES[index - 1]
-            decided_at = timestamp if proposal_status in {"accepted", "rejected"} else None
-            rejection_reason = (
-                "User preferred to keep current budget settings."
-                if proposal_status == "rejected"
-                else None
-            )
-            coach_proposal = CoachProposal(
-                id=index,
-                budget_id=budget.id,
-                proposal_json={
-                    "proposal_type": "coach_seed",
-                    "operations": [
-                        {
-                            "action": "update_budget_line",
-                            "target": {"category": category},
-                            "fields": {
-                                "warn_at": warn_at + 500,
-                                "hard_cap": hard_cap + 500,
-                            },
-                        }
-                    ],
-                    "user_confirmation_message": f"Adjust {category} budget for {month}?",
-                },
-                rationale=f"Seeded proposal for {category.lower()} in {month}.",
-                status=proposal_status,
-                rejection_reason=rejection_reason,
-                decided_at=decided_at,
-                created_at=timestamp,
-            )
-            db.session.add(coach_proposal)
+            for category, warn_at, hard_cap, status in SEED_PROPOSALS_BY_MONTH[month]:
+                proposal_id += 1
+                decided = status in {"accepted", "rejected"}
+                db.session.add(
+                    CoachProposal(
+                        id=proposal_id,
+                        budget_id=budget.id,
+                        proposal_json={
+                            "proposal_type": "threshold_adjustment",
+                            "summary": f"Adjust the {category} thresholds for {month}.",
+                            "operations": [
+                                {
+                                    "action": "update_budget_line",
+                                    "budget_line_id": _line_id(index, CATEGORY_SLOT[category]),
+                                    "category": category,
+                                    "fields": {"warn_at": warn_at, "hard_cap": hard_cap},
+                                }
+                            ],
+                        },
+                        rationale=f"Seeded proposal for {category.lower()} in {month}.",
+                        status=status,
+                        rejection_reason="User preferred to keep current budget settings."
+                        if status == "rejected"
+                        else None,
+                        decided_at=timestamp if decided else None,
+                        created_at=timestamp,
+                    )
+                )
 
         db.session.commit()
     except Exception:

@@ -19,6 +19,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      MULTI_AGENT_ENABLED: "false"
     defaults:
       run:
         working-directory: ethan
@@ -35,6 +37,7 @@ jobs:
     env:
       MCP_ENABLED: "false"
       RAG_ENABLED: "false"
+      MULTI_AGENT_ENABLED: "false"
     needs: test
     steps:
       - uses: actions/checkout@v6

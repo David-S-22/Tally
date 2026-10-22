@@ -160,9 +160,9 @@ def _normalise_integration_mode(value: object) -> str:
     normalised = value.strip().casefold()
     if normalised in {"", "auto"}:
         return "auto"
-    if normalised in {"mcp", "rag"}:
+    if normalised in {"mcp", "rag", "multi_agent"}:
         return normalised
-    raise ServiceError('integration_mode must be "auto", "mcp", or "rag"', 422, "invalid_field")
+    raise ServiceError('integration_mode must be "auto", "mcp", "rag", or "multi_agent"', 422, "invalid_field")
 
 
 def _normalise_skip_deterministic(value: object) -> bool:
@@ -1584,6 +1584,19 @@ def _execution_plan(
         kind in {"budget-line-summary", "affordability", "category-spend", "category-remaining"}
         or _should_use_affordability_context(summary, history, message)
     )
+    if selected_integration == "multi_agent" or (
+        config.MULTI_AGENT_ENABLED
+        and selected_integration == "auto"
+        and should_skip_deterministic
+        and kind == "adjustments"
+    ):
+        return {
+            "path": "multi_agent",
+            "uses_mcp": True,
+            "uses_rag": True,
+            "uses_deterministic_facts": False,
+            "reason": "multi_agent_review",
+        }
     if selected_integration == "mcp" or (selected_integration == "auto" and _looks_like_mcp_request(message)):
         return {
             "path": "mcp",
@@ -1726,6 +1739,25 @@ def _mcp_reply(summary: dict, message: str, context: dict | None = None) -> dict
         "proposal": None,
         "fallback": False,
         "tool_result": tool_result,
+        "grounding": None,
+    }
+
+
+def _multi_agent_reply(review: dict) -> dict:
+    worker = review.get("worker_result") if isinstance(review.get("worker_result"), dict) else {}
+    reviewer = review.get("reviewer_result") if isinstance(review.get("reviewer_result"), dict) else {}
+    if review.get("status") == "error" or worker.get("status") != "success":
+        say = "The Multi-Agent review did not complete. Open the review panel to see the failed stage; only rejection is available."
+    else:
+        verdict = reviewer.get("verdict") or "not available"
+        say = f"The Planner, Worker and Reviewer finished (Reviewer verdict: {verdict}). Your decision is required in the Multi-Agent review panel."
+    return {
+        "mode": "advice",
+        "say": say,
+        "question": None,
+        "proposal": None,
+        "fallback": False,
+        "tool_result": None,
         "grounding": None,
     }
 
@@ -2078,7 +2110,14 @@ def send_message(
     plan["uses_rag"] = execution_plan["uses_rag"]
     plan["uses_deterministic_facts"] = execution_plan["uses_deterministic_facts"]
     response_source = "deterministic"
-    if execution_plan["path"] == "mcp":
+    multi_agent_review = None
+    if execution_plan["path"] == "multi_agent":
+        from . import multi_agent_service
+
+        response_source = "multi_agent"
+        multi_agent_review = multi_agent_service.start(budget_id, effective_message, normalised_context)
+        result = _multi_agent_reply(multi_agent_review)
+    elif execution_plan["path"] == "mcp":
         response_source = "mcp"
         result = _mcp_reply(summary, effective_message, normalised_context)
     elif execution_plan["path"] == "rag":
@@ -2168,6 +2207,7 @@ def send_message(
         "response_source": response_source,
         "tool_result": result.get("tool_result"),
         "grounding": result.get("grounding"),
+        "multi_agent": multi_agent_review,
         "stage_trace": ["observe", "plan", "act", "adapt"],
         "agentic_workflow": {
             "observe": observation,
