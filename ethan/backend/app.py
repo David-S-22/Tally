@@ -3,7 +3,7 @@ from __future__ import annotations
 import requests
 from flask import Flask, jsonify, request
 
-from . import chat_service, config, db_api, multi_agent_service, proposal_service, summary_service, transactions_api
+from . import chat_service, config, db_api, demo_data, multi_agent_service, proposal_service, summary_service, transactions_api
 from .db_api import ServiceError
 
 
@@ -125,6 +125,19 @@ def create_app() -> Flask:
                 "multi_agent_mode": "enabled" if config.MULTI_AGENT_ENABLED else "disabled",
             }
         )
+
+    @application.post("/api/demo-data/seed")
+    def seed_demo_data():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            payload = {}
+        flags = {}
+        for field in ("skip_budgets_reset", "skip_transactions"):
+            value = payload.get(field, False)
+            if not isinstance(value, bool):
+                raise ServiceError(f"{field} must be a boolean", 422, "invalid_field")
+            flags[field] = value
+        return jsonify(demo_data.seed_demo_data(**flags))
 
     @application.get("/api/budgets")
     def list_budgets():

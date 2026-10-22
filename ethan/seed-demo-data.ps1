@@ -1,11 +1,40 @@
 [CmdletBinding()]
 param(
     [switch]$SkipBudgetsReset,
-    [switch]$SkipTransactions
+    [switch]$SkipTransactions,
+    [switch]$Cloud,
+    [string]$ResourceGroup = "ASD-GROUP-21",
+    [string]$FrontendApp = "budgets-frontend",
+    [string]$BaseUrl
 )
 
 $ErrorActionPreference = "Stop"
 Set-Location (Resolve-Path (Join-Path $PSScriptRoot ".."))
+
+if ($Cloud -or $BaseUrl) {
+    if (-not $BaseUrl) {
+        $fqdn = az containerapp show -g $ResourceGroup -n $FrontendApp --query "properties.configuration.ingress.fqdn" -o tsv
+        if ($LASTEXITCODE -ne 0 -or -not $fqdn) {
+            throw "Could not resolve the $FrontendApp URL. Run 'az login' or pass -BaseUrl."
+        }
+        $BaseUrl = "https://$fqdn"
+    }
+    $uri = "$($BaseUrl.TrimEnd('/'))/budgets-backend/api/demo-data/seed"
+    Write-Host "Seeding demo data via $uri"
+    $body = @{
+        skip_budgets_reset = [bool]$SkipBudgetsReset
+        skip_transactions  = [bool]$SkipTransactions
+    } | ConvertTo-Json
+    $result = Invoke-RestMethod -Method Post $uri -ContentType "application/json" -Body $body -TimeoutSec 600
+    if ($result.budgets_reset) {
+        Write-Host "Budgets database reset."
+    }
+    if ($result.transactions) {
+        Write-Host "Transactions created: $($result.transactions.created), already present: $($result.transactions.already_present)"
+    }
+    Write-Host "Done. Open $BaseUrl and select October 2026."
+    return
+}
 
 function Wait-Url([string]$Url, [int]$Seconds = 90) {
     $deadline = (Get-Date).AddSeconds($Seconds)
@@ -112,7 +141,13 @@ if (-not $SkipTransactions) {
 
     $existing = @{}
     foreach ($row in (Invoke-RestMethod "http://localhost:6001/transactions")) {
-        $existing["$(([string]$row.date).Substring(0, 10))|$($row.merchant)|$([decimal]$row.amount)"] = $true
+        $rawDate = [string]$row.date
+        $existingDate = if ($rawDate -match '^\d{4}-\d{2}-\d{2}') {
+            $rawDate.Substring(0, 10)
+        } else {
+            [DateTimeOffset]::Parse($rawDate, [cultureinfo]::InvariantCulture).UtcDateTime.ToString("yyyy-MM-dd")
+        }
+        $existing["$existingDate|$($row.merchant)|$(([decimal]$row.amount).ToString('0.00', [cultureinfo]::InvariantCulture))"] = $true
     }
 
     $created = 0
@@ -120,7 +155,7 @@ if (-not $SkipTransactions) {
     foreach ($month in ($Transactions.Keys | Sort-Object)) {
         foreach ($entry in $Transactions[$month]) {
             $date = "$month-{0:D2}" -f $entry[0]
-            $key = "$date|$($entry[1])|$([decimal]$entry[3])"
+            $key = "$date|$($entry[1])|$(([decimal]$entry[3]).ToString('0.00', [cultureinfo]::InvariantCulture))"
             if ($existing.ContainsKey($key)) {
                 $skipped++
                 continue

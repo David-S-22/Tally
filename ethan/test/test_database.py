@@ -428,3 +428,19 @@ def test_seeded_rows_use_simple_integer_ids(tmp_path):
     assert sorted(line["id"] for line in budget_lines) == list(range(1, len(budget_lines) + 1))
     assert planned_events[0]["id"] == 1
     assert coach_proposals[0]["id"] == 1
+
+
+def test_admin_reset_restores_seed_data(tmp_path):
+    app = create_app(str(tmp_path / "budgets.db"))
+    app.config["TESTING"] = True
+    client = app.test_client()
+    seeded = client.get("/budgets").get_json()
+    assert seeded
+    for budget in seeded:
+        assert client.delete(f"/budgets/{budget['id']}").status_code == 204
+    assert client.get("/budgets").get_json() == []
+
+    resp = client.post("/admin/reset")
+
+    assert resp.status_code == 200
+    assert len(client.get("/budgets").get_json()) == len(seeded)

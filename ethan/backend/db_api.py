@@ -42,6 +42,11 @@ def health():
     return _json(response)
 
 
+def reset_database():
+    response = requests.post(_url("/admin/reset"), timeout=config.DATABASE_TIMEOUT_SECONDS)
+    return _json(response)
+
+
 def list_budgets():
     response = requests.get(_url("/budgets"), timeout=config.DATABASE_TIMEOUT_SECONDS)
     return _json(response)
