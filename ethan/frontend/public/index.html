@@ -236,6 +236,8 @@
         .budget-lines {
             display: grid;
             gap: 1rem;
+            overflow-y: auto;
+            align-content: start;
             padding: 14px 18px 18px;
         }
 
@@ -268,6 +270,9 @@
         .planned-events-list {
             display: grid;
             gap: 0.75rem;
+            max-height: 31rem;
+            overflow-y: auto;
+            align-content: start;
             padding: 14px 18px 18px;
         }
 
@@ -1101,6 +1106,27 @@
                     </div>
                 </div>
             </section>
+
+            <section id="multi-agent-section" class="coach-panel">
+                <div class="panel-header-block">
+                    <h2 class="panel-heading">Multi-Agent review</h2>
+                    <p class="panel-subtext">A Planner, Worker and Reviewer check a threshold change using MCP transactions and RAG guidance; you make the final decision.</p>
+                </div>
+                <div class="panel-body-block">
+                    <div class="proposal-panel multi-agent-panel">
+                        <div class="proposal-header-row">
+                            <div>
+                                <h3 class="panel-heading">Review this month's thresholds</h3>
+                                <p class="panel-subtext">Accepted or partially accepted changes become coach proposals that you apply separately.</p>
+                            </div>
+                            <button id="multi-agent-start-button" type="button" data-multi-agent-start="1">Start Multi-Agent review</button>
+                        </div>
+                        <div id="multi-agent-body" class="proposal-list">
+                            <div class="budget-empty">No Multi-Agent review started for this month.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </div>
     </section>
 
@@ -1648,6 +1674,24 @@
                     + '</div>'
                     + '</article>';
             }).join('');
+            fitBudgetLinesViewport();
+        }
+
+        function fitBudgetLinesViewport() {
+            const linesElement = document.getElementById('budget-lines');
+            const cards = linesElement.querySelectorAll('.budget-line');
+            if (cards.length === 0) {
+                linesElement.style.maxHeight = '';
+                return;
+            }
+            const cardHeight = cards[0].offsetHeight;
+            if (!cardHeight) {
+                return;
+            }
+            const styles = window.getComputedStyle(linesElement);
+            const gap = parseFloat(styles.rowGap) || 0;
+            const verticalPadding = (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
+            linesElement.style.maxHeight = Math.ceil(cardHeight * 3.5 + gap * 3 + verticalPadding) + 'px';
         }
 
         function renderOtherExpenses(summary) {
@@ -2104,6 +2148,152 @@
             setChatStatus('Rejected the selected coach proposal.');
         }
 
+        const multiAgentState = { review: null, busy: false };
+
+        function multiAgentStage(title, result, bodyHtml) {
+            const failed = !result || result.status !== 'success';
+            return '<section class="proposal-card ' + (failed ? 'rejected' : 'proposed') + '">'
+                + '<div class="proposal-card-head"><div class="proposal-card-title">' + escapeHtml(title) + '</div>'
+                + '<div class="proposal-card-status">' + escapeHtml(result ? (result.status === 'success' ? (result.model || 'ok') : (result.code || 'error')) : 'not run') + '</div></div>'
+                + (failed && result && result.error ? '<p class="proposal-card-body">' + escapeHtml(result.error) + '</p>' : bodyHtml)
+                + '</section>';
+        }
+
+        function multiAgentList(items) {
+            return Array.isArray(items) && items.length
+                ? '<ul class="proposal-card-ops">' + items.map(function (item) { return '<li>' + escapeHtml(item) + '</li>'; }).join('') + '</ul>'
+                : '';
+        }
+
+        function renderMultiAgentReview(review) {
+            multiAgentState.review = review || null;
+            const body = document.getElementById('multi-agent-body');
+            if (!review) {
+                body.innerHTML = '<div class="budget-empty">No Multi-Agent review started for this month.</div>';
+                return;
+            }
+            const planner = review.planner_result;
+            const worker = review.worker_result;
+            const reviewer = review.reviewer_result;
+            const decision = review.human_decision || {};
+            const integration = review.integration || {};
+            let html = '<p class="panel-subtext">Workflow ' + escapeHtml(review.workflow_id || '')
+                + ' | MCP: ' + (integration.mcp_used ? 'used' : 'not used')
+                + ' | RAG: ' + (integration.rag_used ? 'used' : 'not used') + '</p>';
+            html += multiAgentStage('Planner', planner, (Array.isArray(planner && planner.plan)
+                ? multiAgentList(planner.plan)
+                : '<p class="proposal-card-body">' + formatChatHtml(planner && planner.plan || '') + '</p>')
+                + multiAgentList(planner && planner.completion_criteria));
+            html += multiAgentStage('Worker', worker, '<p class="proposal-card-body">' + formatChatHtml(worker && worker.output || 'The Worker returned no written recommendation.') + '</p>'
+                + '<p class="panel-subtext">Confidence: ' + escapeHtml(worker && worker.confidence || 'n/a') + '</p>'
+                + multiAgentList(worker && worker.limitations));
+            html += multiAgentStage('Reviewer', reviewer, '<p class="proposal-card-body"><strong>Verdict: ' + escapeHtml(reviewer && reviewer.verdict || 'n/a') + '</strong><br>'
+                + formatChatHtml(reviewer && reviewer.review || '') + '</p>' + multiAgentList(reviewer && reviewer.risks)
+                + multiAgentList(reviewer && reviewer.recommendations));
+            const candidate = review.proposal_candidate;
+            if (candidate) {
+                html += '<ul class="proposal-card-ops">' + (candidate.operations || []).map(function (operation) {
+                    return '<li>' + escapeHtml(formatProposalOperation(budgetState.summary, operation)) + '</li>';
+                }).join('') + '</ul>';
+            } else if (review.proposal_candidate_error) {
+                html += '<p class="panel-subtext">No applicable proposal: ' + escapeHtml(review.proposal_candidate_error) + '</p>';
+            }
+            if (decision.status === 'pending') {
+                const failed = review.status === 'error' || !worker || worker.status !== 'success';
+                html += '<div class="proposal-card">'
+                    + '<label>Your name <input id="multi-agent-decided-by" type="text" maxlength="100"></label>'
+                    + '<label>Reason <textarea id="multi-agent-reason" rows="2" maxlength="1000"></textarea></label>'
+                    + '<label>Corrected proposal JSON (Partially Accept only) <textarea id="multi-agent-corrected" rows="5">'
+                    + escapeHtml(candidate ? JSON.stringify(candidate, null, 2) : '') + '</textarea></label>'
+                    + '<div class="proposal-card-actions">'
+                    + (failed ? '' : '<button type="button" data-multi-agent-decision="Accept">Accept</button>'
+                        + '<button type="button" data-multi-agent-decision="Partially Accept">Partially Accept</button>')
+                    + '<button type="button" data-multi-agent-decision="Reject">Reject</button>'
+                    + '</div></div>';
+            } else {
+                html += '<p class="panel-subtext">Decision recorded: ' + escapeHtml(decision.decision || decision.status || '') + '</p>';
+                if (review.proposal) {
+                    html += '<p class="panel-subtext">A coach proposal was created. Apply it from Coach proposals below.</p>';
+                }
+            }
+            body.innerHTML = html;
+        }
+
+        function setMultiAgentBusy(isBusy) {
+            multiAgentState.busy = isBusy;
+            document.getElementById('multi-agent-start-button').disabled = isBusy;
+        }
+
+        async function startMultiAgentReview() {
+            if (!budgetState.activeBudgetId || multiAgentState.busy) {
+                return;
+            }
+            setMultiAgentBusy(true);
+            setChatStatus('Multi-Agent review is running. This can take a few minutes...');
+            document.getElementById('multi-agent-body').innerHTML = '<div class="budget-empty">Planner, Worker and Reviewer are working...</div>';
+            try {
+                const response = await fetch('/budgets-backend/api/budgets/' + encodeURIComponent(budgetState.activeBudgetId) + '/multi-agent/workflows', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
+                });
+                const result = await readApiJson(response, 'Multi-Agent review is unavailable.', 'The Multi-Agent service returned an unexpected response.');
+                if (!response.ok && !(result && result.workflow_id)) {
+                    throw new Error(result && result.error ? result.error : 'Unable to start Multi-Agent review.');
+                }
+                renderMultiAgentReview(result);
+                setChatStatus('Multi-Agent review finished. Your decision is required.');
+            } catch (error) {
+                renderMultiAgentReview(null);
+                document.getElementById('multi-agent-body').innerHTML = '<div class="budget-empty">'
+                    + escapeHtml(error.message || 'Unable to start Multi-Agent review.') + '</div>';
+                setChatStatus(error.message || 'Unable to start Multi-Agent review.');
+            } finally {
+                setMultiAgentBusy(false);
+            }
+        }
+
+        async function submitMultiAgentDecision(decision) {
+            const review = multiAgentState.review;
+            if (!review || multiAgentState.busy) {
+                return;
+            }
+            const payload = {
+                decision: decision,
+                reason: document.getElementById('multi-agent-reason').value.trim(),
+                decided_by: document.getElementById('multi-agent-decided-by').value.trim(),
+            };
+            if (decision === 'Partially Accept') {
+                try {
+                    payload.corrected_output = JSON.parse(document.getElementById('multi-agent-corrected').value);
+                } catch (_error) {
+                    setChatStatus('Corrected proposal must be valid JSON.');
+                    return;
+                }
+            }
+            setMultiAgentBusy(true);
+            try {
+                const response = await fetch('/budgets-backend/api/multi-agent/workflows/' + encodeURIComponent(review.workflow_id) + '/decision', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const result = await readApiJson(response, 'Unable to record the decision.', 'The Multi-Agent service returned an unexpected response.');
+                if (!response.ok) {
+                    throw new Error(result && result.error ? result.error : 'Unable to record the decision.');
+                }
+                renderMultiAgentReview(result);
+                if (result.proposal) {
+                    await loadBudgetSummary(budgetState.activeBudgetId);
+                }
+                setChatStatus('Recorded decision: ' + decision + '.');
+            } catch (error) {
+                setChatStatus(error.message || 'Unable to record the decision.');
+            } finally {
+                setMultiAgentBusy(false);
+            }
+        }
+
         async function loadChatHistory(budgetId) {
             if (!budgetId) {
                 setChatActionsEnabled(false, 'No budget has been created for this month yet, so chat is unavailable.');
@@ -2294,6 +2484,9 @@
                     mergeCoachProposal(budgetState.summary, result.proposal);
                     renderCoachProposals(budgetState.summary);
                 }
+                if (result.multi_agent) {
+                    renderMultiAgentReview(result.multi_agent);
+                }
                 setChatStatus(result.fallback
                     ? 'Tally used a fallback reply because the AI service was unavailable or returned invalid data.'
                     : 'Completed ' + ((result.stage_trace || []).join(' -> ') || 'observe -> plan -> act -> adapt')
@@ -2304,7 +2497,9 @@
                                 ? 'the shared MCP server.'
                                 : result.response_source === 'rag'
                                     ? 'the shared RAG flow.'
-                                    : 'grounded budget rules.'));
+                                    : result.response_source === 'multi_agent'
+                                        ? 'the shared Multi-Agent server.'
+                                        : 'grounded budget rules.'));
             } catch (error) {
                 if (!isPageActive()) {
                     return;
@@ -2909,6 +3104,17 @@
                 quickAddButton
             );
         });
+        document.getElementById('multi-agent-section').addEventListener('click', function (event) {
+            const multiAgentStart = event.target.closest('[data-multi-agent-start]');
+            if (multiAgentStart) {
+                startMultiAgentReview();
+                return;
+            }
+            const multiAgentDecision = event.target.closest('[data-multi-agent-decision]');
+            if (multiAgentDecision) {
+                submitMultiAgentDecision(multiAgentDecision.getAttribute('data-multi-agent-decision'));
+            }
+        });
         document.getElementById('coach-panel').addEventListener('click', function (event) {
             const chipButton = event.target.closest('[data-chat-chip]');
             if (chipButton && !chipButton.disabled) {
@@ -2943,6 +3149,7 @@
             renderCoachProposals(budgetState.summary);
         });
 
+        window.addEventListener('resize', fitBudgetLinesViewport);
         loadBudgetsOverview();
         })();
     </script>

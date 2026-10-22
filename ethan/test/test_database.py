@@ -425,6 +425,6 @@ def test_seeded_rows_use_simple_integer_ids(tmp_path):
     planned_events = client.get(f"/budgets/{first_budget['id']}/planned-events").get_json()
     coach_proposals = client.get(f"/budgets/{first_budget['id']}/coach-proposals").get_json()
 
-    assert budget_lines[0]["id"] == 1
+    assert sorted(line["id"] for line in budget_lines) == list(range(1, len(budget_lines) + 1))
     assert planned_events[0]["id"] == 1
     assert coach_proposals[0]["id"] == 1
