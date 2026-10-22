@@ -27,7 +27,12 @@ def _ollama_status():
 
 def create_app():
     app = Flask(__name__, template_folder=TEMPLATE_DIR)
-    CORS(app)
+    # Release 2 (B5): CORS(app) with no arguments answers every origin with
+    # Access-Control-Allow-Origin: *, so any page on the internet could read this
+    # backend's responses in a visitor's browser. The only browser origin that
+    # legitimately calls it is the bills frontend, which FRONTEND_ORIGIN already
+    # names (set per environment in docker-compose.yml and bicep/main.bicep).
+    CORS(app, origins=[config.FRONTEND_ORIGIN])
     app.register_blueprint(bills.bp)
     app.register_blueprint(payments.bp)
     app.register_blueprint(disputes.bp)
@@ -40,6 +45,15 @@ def create_app():
     app.register_blueprint(evidence.bp)
     app.register_blueprint(evidence.ui)
 
+    @app.after_request
+    def security_headers(response):
+        """Release 2 (B5). Bills renders server-side HTML fragments for htmx as well
+        as JSON, so nosniff matters here, and no response from this backend should
+        be cached by a proxy on the way back to the browser."""
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.errorhandler(ServiceError)
     def handle_service_error(error):
         payload = {"error": error.message}
@@ -50,8 +64,12 @@ def create_app():
     @app.get("/health")
     def health():
         try:
-            bills_db.health()
-            db_api = "up"
+            db_health = bills_db.health()
+            # bills-db leaves /health open for probes, so reaching it proves only
+            # that the service is running. When it says a token is required and
+            # ours was not accepted, every other route will refuse us: report that
+            # rather than "up".
+            db_api = "unauthorized" if db_health.get("auth_required") and not db_health.get("authenticated") else "up"
         except requests.RequestException:
             db_api = "down"
         _rows, transactions_source = transactions.list_transactions()

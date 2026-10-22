@@ -290,6 +290,11 @@ esac
 # Validate required configuration before any infrastructure changes.
 if [ "$DEPLOY_CONTAINERS" = true ]; then
     : "${MULTI_AGENT_TOKEN:?Set MULTI_AGENT_TOKEN before deploying backend configuration}"
+    # Caught here rather than in bicep: main.bicepparam reads this with
+    # readEnvironmentVariable, which fails mid-deployment and does not name the
+    # variable. bills-db rejects anything under 32 characters at startup.
+    : "${BILLS_DB_TOKEN:?Set BILLS_DB_TOKEN before deploying backend configuration}"
+    [[ "$BILLS_DB_TOKEN" =~ ^[A-Za-z0-9_-]{32,}$ ]] || { echo 'Use a BILLS_DB_TOKEN of 32+ letters, digits, underscores or hyphens.' >&2; exit 1; }
 fi
 
 # --- Pre-flight Health Notice for Containers ---

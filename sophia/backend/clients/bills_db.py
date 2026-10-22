@@ -12,6 +12,13 @@ def _url(path):
     return f"{config.BILLS_DB_API_URL}{path}"
 
 
+def _headers():
+    """Authorization for bills-db when it is configured to require one (cloud),
+    and nothing at all when it is not (docker compose, tests). Read per call
+    rather than at import so a test can set the token on config."""
+    return {"Authorization": f"Bearer {config.BILLS_DB_TOKEN}"} if config.BILLS_DB_TOKEN else {}
+
+
 def _raise_for_status(response):
     """Raise a ServiceError carrying the bills-db API's own message and status for a 4xx
     response, so a value it rejects comes back as a clean 400/404, never an unhandled 500.
@@ -60,13 +67,13 @@ def row_to_payment(row):
 
 
 def list_bills():
-    response = requests.get(_url("/bills"), timeout=10)
+    response = requests.get(_url("/bills"), headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def get_bill(bill_id):
-    response = requests.get(_url(f"/bills/{bill_id}"), timeout=10)
+    response = requests.get(_url(f"/bills/{bill_id}"), headers=_headers(), timeout=10)
     if response.status_code == 404:
         return None
     _raise_for_status(response)
@@ -74,43 +81,43 @@ def get_bill(bill_id):
 
 
 def create_bill(payload):
-    response = requests.post(_url("/bills"), json=payload, timeout=10)
+    response = requests.post(_url("/bills"), json=payload, headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def update_bill(bill_id, payload):
-    response = requests.put(_url(f"/bills/{bill_id}"), json=payload, timeout=10)
+    response = requests.put(_url(f"/bills/{bill_id}"), json=payload, headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def delete_bill(bill_id):
-    response = requests.delete(_url(f"/bills/{bill_id}"), timeout=10)
+    response = requests.delete(_url(f"/bills/{bill_id}"), headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def list_bill_payments(bill_id):
-    response = requests.get(_url(f"/bills/{bill_id}/payments"), timeout=10)
+    response = requests.get(_url(f"/bills/{bill_id}/payments"), headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def list_payments():
-    response = requests.get(_url("/payments"), timeout=10)
+    response = requests.get(_url("/payments"), headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def create_payment(payload):
-    response = requests.post(_url("/payments"), json=payload, timeout=10)
+    response = requests.post(_url("/payments"), json=payload, headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def get_payment(payment_id):
-    response = requests.get(_url(f"/payments/{payment_id}"), timeout=10)
+    response = requests.get(_url(f"/payments/{payment_id}"), headers=_headers(), timeout=10)
     if response.status_code == 404:
         return None
     _raise_for_status(response)
@@ -118,31 +125,31 @@ def get_payment(payment_id):
 
 
 def update_payment(payment_id, payload):
-    response = requests.put(_url(f"/payments/{payment_id}"), json=payload, timeout=10)
+    response = requests.put(_url(f"/payments/{payment_id}"), json=payload, headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def delete_payment(payment_id):
-    response = requests.delete(_url(f"/payments/{payment_id}"), timeout=10)
+    response = requests.delete(_url(f"/payments/{payment_id}"), headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def list_disputes():
-    response = requests.get(_url("/disputes"), timeout=10)
+    response = requests.get(_url("/disputes"), headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def create_dispute(payload):
-    response = requests.post(_url("/disputes"), json=payload, timeout=10)
+    response = requests.post(_url("/disputes"), json=payload, headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def get_dispute(dispute_id):
-    response = requests.get(_url(f"/disputes/{dispute_id}"), timeout=10)
+    response = requests.get(_url(f"/disputes/{dispute_id}"), headers=_headers(), timeout=10)
     if response.status_code == 404:
         return None
     _raise_for_status(response)
@@ -150,44 +157,44 @@ def get_dispute(dispute_id):
 
 
 def update_dispute(dispute_id, payload):
-    response = requests.put(_url(f"/disputes/{dispute_id}"), json=payload, timeout=10)
+    response = requests.put(_url(f"/disputes/{dispute_id}"), json=payload, headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def delete_dispute(dispute_id):
-    response = requests.delete(_url(f"/disputes/{dispute_id}"), timeout=10)
+    response = requests.delete(_url(f"/disputes/{dispute_id}"), headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def list_dispute_drafts(dispute_id):
-    response = requests.get(_url(f"/disputes/{dispute_id}/drafts"), timeout=10)
+    response = requests.get(_url(f"/disputes/{dispute_id}/drafts"), headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def create_dispute_draft(dispute_id, payload):
-    response = requests.post(_url(f"/disputes/{dispute_id}/drafts"), json=payload, timeout=10)
+    response = requests.post(_url(f"/disputes/{dispute_id}/drafts"), json=payload, headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def list_suggestions(status=None):
     params = {"status": status} if status else None
-    response = requests.get(_url("/suggestions"), params=params, timeout=10)
+    response = requests.get(_url("/suggestions"), params=params, headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def create_suggestion(payload):
-    response = requests.post(_url("/suggestions"), json=payload, timeout=10)
+    response = requests.post(_url("/suggestions"), json=payload, headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def get_suggestion(suggestion_id):
-    response = requests.get(_url(f"/suggestions/{suggestion_id}"), timeout=10)
+    response = requests.get(_url(f"/suggestions/{suggestion_id}"), headers=_headers(), timeout=10)
     if response.status_code == 404:
         return None
     _raise_for_status(response)
@@ -195,30 +202,30 @@ def get_suggestion(suggestion_id):
 
 
 def update_suggestion(suggestion_id, payload):
-    response = requests.put(_url(f"/suggestions/{suggestion_id}"), json=payload, timeout=10)
+    response = requests.put(_url(f"/suggestions/{suggestion_id}"), json=payload, headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def list_chat_messages():
-    response = requests.get(_url("/chat_messages"), timeout=10)
+    response = requests.get(_url("/chat_messages"), headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def create_chat_message(payload):
-    response = requests.post(_url("/chat_messages"), json=payload, timeout=10)
+    response = requests.post(_url("/chat_messages"), json=payload, headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def update_chat_message(message_id, payload):
-    response = requests.put(_url(f"/chat_messages/{message_id}"), json=payload, timeout=10)
+    response = requests.put(_url(f"/chat_messages/{message_id}"), json=payload, headers=_headers(), timeout=10)
     _raise_for_status(response)
     return response.json()
 
 
 def health():
-    response = requests.get(_url("/health"), timeout=5)
+    response = requests.get(_url("/health"), headers=_headers(), timeout=5)
     _raise_for_status(response)
     return response.json()

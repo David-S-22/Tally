@@ -66,6 +66,14 @@ param enableRag bool = true
 @secure()
 @minLength(32)
 param multiAgentToken string
+
+@description('Release 2 (B5): bearer token bills-db requires on every route but /health. Generate with `openssl rand -hex 32`.')
+@secure()
+@minLength(32)
+param billsDbToken string
+
+param dbAllowedSourceIps array = []
+
 param enableMultiAgent bool = true
 param mcpUrl string = 'http://tally-ai.${location}.cloudapp.azure.com:8000/mcp'
 param ragUrl string = 'http://tally-ai.${location}.cloudapp.azure.com:5003'
@@ -153,6 +161,7 @@ module modTransactionsDb 'modules/container-app.bicep' = {
     location: location
     environmentId: environment.id
     externalIngress: true // MCP VM calls this container over HTTPS.
+    allowedSourceIps: dbAllowedSourceIps
     targetPort: 6001
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
@@ -179,6 +188,7 @@ module modBillsDb 'modules/container-app.bicep' = {
     location: location
     environmentId: environment.id
     externalIngress: true // MCP VM calls this container over HTTPS.
+    allowedSourceIps: dbAllowedSourceIps
     targetPort: 6005
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
@@ -187,9 +197,11 @@ module modBillsDb 'modules/container-app.bicep' = {
     cpu: defaultCpu
     memory: defaultMemory
     minReplicas: minReplicas
+    appSecrets: { 'bills-db-token': billsDbToken }
     env: [
       { name: 'PORT', value: '6005' }
       { name: 'DB_PATH', value: '/data/bills.db' }
+      { name: 'BILLS_DB_TOKEN', secretRef: 'bills-db-token' }
     ]
   }
 }
@@ -201,6 +213,7 @@ module modAnomaliesDb 'modules/container-app.bicep' = {
     location: location
     environmentId: environment.id
     externalIngress: true // MCP VM calls this container over HTTPS.
+    allowedSourceIps: dbAllowedSourceIps
     targetPort: 6004
     acrLoginServer: acrLoginServer
     acrAdminUsername: acrAdminUsername
@@ -328,7 +341,7 @@ module modBillsBackend 'modules/container-app.bicep' = {
     cpu: backendCpu
     memory: backendMemory
     minReplicas: minReplicas
-    appSecrets: { 'multi-agent-token': multiAgentToken }
+    appSecrets: { 'multi-agent-token': multiAgentToken, 'bills-db-token': billsDbToken }
     env: [
       { name: 'RAG_SERVER_URL', value: ragUrl }
       { name: 'MULTI_AGENT_TOKEN', secretRef: 'multi-agent-token' }
@@ -337,6 +350,7 @@ module modBillsBackend 'modules/container-app.bicep' = {
       { name: 'MULTI_AGENT_SERVER_URL', value: multiAgentUrl }
       { name: 'PORT', value: '5005' }
       { name: 'BILLS_DB_API_URL', value: 'https://bills-db.${envDomain}' }
+      { name: 'BILLS_DB_TOKEN', secretRef: 'bills-db-token' }
       { name: 'FRONTEND_ORIGIN', value: 'https://shared-frontend.${envDomain}' }
       { name: 'OLLAMA_URL', value: ollamaUrl }
       { name: 'OLLAMA_KEEP_ALIVE', value: '30m' }

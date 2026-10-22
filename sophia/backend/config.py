@@ -4,6 +4,9 @@ from datetime import datetime
 
 PORT = int(os.environ.get("PORT", "5005"))
 BILLS_DB_API_URL = os.environ.get("BILLS_DB_API_URL", "http://bills-db:6005")
+# Bearer token bills-db requires once it is configured there; see sophia/database/app.py.
+# Unset locally, where bills-db is only reachable on the compose network.
+BILLS_DB_TOKEN = os.environ.get("BILLS_DB_TOKEN", "").strip()
 TRANSACTIONS_DB_API_URL = os.environ.get("TRANSACTIONS_DB_API_URL") or None
 FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3005")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")

@@ -1,10 +1,10 @@
 """Thin CRUD JSON API over the bills SQLite database. No business logic lives here."""
+import hmac
 import json
 import os
 from datetime import datetime, timezone
 
 from flask import Flask, g, jsonify, request
-from flask_cors import CORS
 
 from db import get_connection, load_schema, row_to_dict, rows_to_list
 from seed import seed
@@ -81,10 +81,50 @@ def _validate_dispute(data, partial):
         raise ApiError(f"status must be one of {sorted(DISPUTE_STATUSES)}")
 
 
-def create_app(db_path=None):
+def create_app(db_path=None, token=None):
     app = Flask(__name__)
-    CORS(app)
     app.config["DB_PATH"] = db_path or os.environ.get("DB_PATH", "./bills.db")
+
+    # Release 2 (B5, cloud endpoint security). bills-db is deployed with external
+    # ingress -- the MCP VM sits outside the Container Apps environment and calls it
+    # over HTTPS -- so without this the whole bills database is on the public
+    # internet with no authentication at all.
+    #
+    # The token is only enforced once one is configured, which is what keeps
+    # docker compose and the test suite working unchanged: there the service is
+    # reachable only on the compose network and BILLS_DB_TOKEN is unset. The cloud
+    # template always sets it. This mirrors the Multi-Agent Server's rule in
+    # ai-services/multi-agent-server/settings.py, including the 32-character floor.
+    #
+    # flask_cors used to wrap this app with a wildcard policy. Nothing in a browser
+    # ever calls bills-db -- only bills-backend does, server to server -- so the
+    # right CORS policy here is no CORS headers at all.
+    api_token = (os.environ.get("BILLS_DB_TOKEN", "") if token is None else token).strip()
+    if api_token and len(api_token) < 32:
+        raise ValueError("BILLS_DB_TOKEN must be at least 32 characters")
+    app.config["API_TOKEN"] = api_token
+
+    @app.before_request
+    def require_token():
+        """401 on every route but /health once a token is configured.
+
+        /health stays open so the container platform's probes and `deploy.sh`
+        can see the service is up without holding a credential.
+        """
+        if not api_token or request.path == "/health":
+            return None
+        supplied = request.headers.get("Authorization", "")
+        if not hmac.compare_digest(supplied.encode(), f"Bearer {api_token}".encode()):
+            return jsonify({"error": "valid bearer token required"}), 401
+        return None
+
+    @app.after_request
+    def security_headers(response):
+        """Same two headers the Multi-Agent Server sets: this API answers with
+        financial records, so nothing it returns should be sniffed or cached."""
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     def db():
         if "db" not in g:
@@ -103,7 +143,22 @@ def create_app(db_path=None):
 
     @app.get("/health")
     def health():
-        return jsonify({"ok": True})
+        """Open, so the platform's probes and deploy.sh need no credential.
+
+        It does report whether the caller presented a valid token. Without that,
+        a backend holding the wrong token sees this route answer 200 and reports
+        the database as up while every real call it makes is refused -- a green
+        health check in front of a service that cannot read a single bill.
+        """
+        supplied = request.headers.get("Authorization", "")
+        authenticated = bool(api_token) and hmac.compare_digest(
+            supplied.encode(), f"Bearer {api_token}".encode()
+        )
+        return jsonify({
+            "ok": True,
+            "auth_required": bool(api_token),
+            "authenticated": authenticated,
+        })
 
     @app.get("/bills")
     def list_bills():

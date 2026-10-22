@@ -13,6 +13,12 @@ param services array
 @secure()
 param serviceEnvironment string
 
+@description('Release 2 (B5): source address prefix allowed to SSH in. Defaults to "*" -- the whole internet -- which is what this rule has always been. Narrow it to the team\'s addresses, but have Azure Bastion or the serial console available first: a wrong value here locks everyone out of the VM.')
+param sshSourceAddressPrefix string = '*'
+
+@description('Release 2 (B5): source address prefix allowed to reach the MCP, RAG and Multi-Agent ports. Defaults to "*". Of the three only the Multi-Agent Server authenticates its callers, so this rule is the only control in front of MCP and RAG.')
+param serviceSourceAddressPrefix string = '*'
+
 resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
   name: 'nsg-${vmName}'
   location: location
@@ -25,7 +31,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
           protocol: 'Tcp'
           access: 'Allow'
           direction: 'Inbound'
-          sourceAddressPrefix: '*'
+          sourceAddressPrefix: sshSourceAddressPrefix
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
           destinationPortRange: '22'
@@ -38,7 +44,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
           protocol: 'Tcp'
           access: 'Allow'
           direction: 'Inbound'
-          sourceAddressPrefix: '*'
+          sourceAddressPrefix: serviceSourceAddressPrefix
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
           destinationPortRanges: [for service in services: string(service.port)]

@@ -14,6 +14,12 @@ param dnsLabel string = 'tally-ollama'
 param autoShutdownTime string = '0000'
 param autoShutdownTimeZone string = 'AUS Eastern Standard Time'
 
+@description('Source address prefix allowed to SSH in; "*" is the whole internet.')
+param sshSourceAddressPrefix string = '*'
+
+@description('Source address prefix allowed to reach Ollama on 11434; "*" is the whole internet.')
+param ollamaSourceAddressPrefix string = '*'
+
 resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
   name: 'nsg-${vmName}'
   location: location
@@ -26,7 +32,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
           protocol: 'Tcp'
           access: 'Allow'
           direction: 'Inbound'
-          sourceAddressPrefix: '*'
+          sourceAddressPrefix: sshSourceAddressPrefix
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
           destinationPortRange: '22'
@@ -39,7 +45,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
           protocol: 'Tcp'
           access: 'Allow'
           direction: 'Inbound'
-          sourceAddressPrefix: '*'
+          sourceAddressPrefix: ollamaSourceAddressPrefix
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
           destinationPortRange: '11434'
