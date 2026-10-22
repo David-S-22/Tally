@@ -1156,20 +1156,20 @@
 
             <section id="multi-agent-section" class="coach-panel">
                 <div class="panel-header-block">
-                    <h2 class="panel-heading">Multi-Agent review</h2>
-                    <p class="panel-subtext">A Planner, Worker and Reviewer check a threshold change using MCP transactions and RAG guidance; you make the final decision.</p>
+                    <h2 class="panel-heading">Multi-Agent risk review</h2>
+                    <p class="panel-subtext">A Planner, Worker and Reviewer look at the budget line most at risk this month, using your transactions (MCP) and budgeting guidance (RAG), and suggest a threshold change. You make the final decision.</p>
                 </div>
                 <div class="panel-body-block">
                     <div class="proposal-panel multi-agent-panel">
                         <div class="proposal-header-row">
                             <div>
-                                <h3 class="panel-heading">Review this month's thresholds</h3>
-                                <p class="panel-subtext">Accepted or partially accepted changes become coach proposals that you apply separately.</p>
+                                <h3 class="panel-heading">Address the highest risk</h3>
+                                <p class="panel-subtext">Lines already over their cap on actual spend come first, then lines projected over their cap from planned events. Accepted or partially accepted changes become coach proposals that you apply separately.</p>
                             </div>
-                            <button id="multi-agent-start-button" type="button" data-multi-agent-start="1">Start Multi-Agent review</button>
+                            <button id="multi-agent-start-button" type="button" data-multi-agent-start="1">Review highest risk</button>
                         </div>
                         <div id="multi-agent-body" class="proposal-list">
-                            <div class="budget-empty">No Multi-Agent review started for this month.</div>
+                            <div class="budget-empty">No risk review started for this month.</div>
                         </div>
                     </div>
                 </div>
@@ -2216,7 +2216,7 @@
             multiAgentState.review = review || null;
             const body = document.getElementById('multi-agent-body');
             if (!review) {
-                body.innerHTML = '<div class="budget-empty">No Multi-Agent review started for this month.</div>';
+                body.innerHTML = '<div class="budget-empty">No risk review started for this month.</div>';
                 return;
             }
             const planner = review.planner_result;
@@ -2276,8 +2276,8 @@
                 return;
             }
             setMultiAgentBusy(true);
-            setChatStatus('Multi-Agent review is running. This can take a few minutes...');
-            document.getElementById('multi-agent-body').innerHTML = '<div class="budget-empty">Planner, Worker and Reviewer are working...</div>';
+            setChatStatus('Risk review is running. This can take a few minutes...');
+            document.getElementById('multi-agent-body').innerHTML = '<div class="budget-empty">Planner, Worker and Reviewer are assessing the highest-risk budget line...</div>';
             try {
                 const response = await fetch('/budgets-backend/api/budgets/' + encodeURIComponent(budgetState.activeBudgetId) + '/multi-agent/workflows', {
                     method: 'POST',
