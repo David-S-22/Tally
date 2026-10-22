@@ -410,6 +410,7 @@ module modBudgetsBackend 'modules/container-app.bicep' = {
       { name: 'FLASK_ENV', value: 'production' }
       { name: 'PORT', value: '5006' }
       { name: 'BUDGETS_DB_URL', value: 'https://budgets-db.${envDomain}' }
+      { name: 'TRANSACTIONS_DB_URL', value: 'https://transactions-db.${envDomain}' }
       { name: 'TRANSACTIONS_API_URL', value: 'https://transactions-backend.${envDomain}' }
       { name: 'OLLAMA_URL', value: ollamaUrl }
       { name: 'CHAT_MODEL', value: 'qwen2.5:3b' }

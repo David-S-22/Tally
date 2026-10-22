@@ -788,3 +788,27 @@ def test_transactions_report_unavailable_database(database_client):
         "error": "database unavailable",
         "code": "database_unavailable",
     }
+
+
+def test_bulk_transactions_skip_existing_and_validate(database_client):
+    client, _database_path = database_client
+    rows = [
+        transaction_payload(date="2026-08-01", merchant="Bulk One", amount=10),
+        transaction_payload(date="2026-08-02", merchant="Bulk Two", amount=20.5),
+    ]
+
+    first = client.post("/transactions/bulk", json={"transactions": rows})
+    second = client.post("/transactions/bulk", json={"transactions": rows})
+
+    assert first.status_code == 201
+    assert first.get_json() == {"created": 2, "already_present": 0}
+    assert second.get_json() == {"created": 0, "already_present": 2}
+    merchants = [row["merchant"] for row in client.get("/transactions").get_json()]
+    assert merchants.count("Bulk One") == 1
+
+    unknown_category = client.post(
+        "/transactions/bulk",
+        json={"transactions": [transaction_payload(category_id=MISSING_CATEGORY_ID)]},
+    )
+    assert unknown_category.status_code == 422
+    assert client.post("/transactions/bulk", json={"transactions": []}).status_code == 422

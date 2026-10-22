@@ -139,40 +139,20 @@ if (-not $SkipTransactions) {
     docker compose up -d transactions-db | Out-Null
     Wait-Url "http://localhost:6001/health"
 
-    $existing = @{}
-    foreach ($row in (Invoke-RestMethod "http://localhost:6001/transactions")) {
-        $rawDate = [string]$row.date
-        $existingDate = if ($rawDate -match '^\d{4}-\d{2}-\d{2}') {
-            $rawDate.Substring(0, 10)
-        } else {
-            [DateTimeOffset]::Parse($rawDate, [cultureinfo]::InvariantCulture).UtcDateTime.ToString("yyyy-MM-dd")
-        }
-        $existing["$existingDate|$($row.merchant)|$(([decimal]$row.amount).ToString('0.00', [cultureinfo]::InvariantCulture))"] = $true
-    }
-
-    $created = 0
-    $skipped = 0
-    foreach ($month in ($Transactions.Keys | Sort-Object)) {
+    $rows = foreach ($month in ($Transactions.Keys | Sort-Object)) {
         foreach ($entry in $Transactions[$month]) {
-            $date = "$month-{0:D2}" -f $entry[0]
-            $key = "$date|$($entry[1])|$(([decimal]$entry[3]).ToString('0.00', [cultureinfo]::InvariantCulture))"
-            if ($existing.ContainsKey($key)) {
-                $skipped++
-                continue
-            }
-            $body = @{
-                date        = $date
+            @{
+                date        = "$month-{0:D2}" -f $entry[0]
                 merchant    = $entry[1]
                 description = $entry[2]
                 amount      = $entry[3]
                 category_id = $entry[4]
-            } | ConvertTo-Json
-            Invoke-RestMethod -Method Post "http://localhost:6001/transactions" -ContentType "application/json" -Body $body | Out-Null
-            $existing[$key] = $true
-            $created++
+            }
         }
     }
-    Write-Host "Transactions created: $created, already present: $skipped"
+    $body = @{ transactions = @($rows) } | ConvertTo-Json -Depth 4
+    $result = Invoke-RestMethod -Method Post "http://localhost:6001/transactions/bulk" -ContentType "application/json" -Body $body
+    Write-Host "Transactions created: $($result.created), already present: $($result.already_present)"
 }
 
 docker compose restart budgets-frontend shared-frontend | Out-Null
