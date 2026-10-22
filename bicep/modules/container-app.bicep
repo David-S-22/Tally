@@ -21,9 +21,22 @@ param memory string = '0.5Gi'
 param minReplicas int = 0
 param maxReplicas int = 1
 
+@description('CIDR ranges allowed to reach this app; empty allows every source, any entry denies the rest.')
+param allowedSourceIps array = []
+
 var additionalSecrets = [for secret in items(appSecrets): {
   name: secret.key
   value: secret.value
+}]
+
+// Allow rules only. The platform refuses a mix of Allow and Deny rules, and an
+// allowlist is the safer shape: a range that is forgotten stays blocked rather
+// than silently open.
+var ipRestrictions = [for (range, index) in allowedSourceIps: {
+  name: 'allow-${index}'
+  description: 'Release 2 B5 allowlist'
+  ipAddressRange: range
+  action: 'Allow'
 }]
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
@@ -36,6 +49,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       ingress: {
         external: externalIngress
         targetPort: targetPort
+        allowInsecure: false
+        ipSecurityRestrictions: ipRestrictions
         traffic: [
           {
             latestRevision: true

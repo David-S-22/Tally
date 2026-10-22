@@ -14,3 +14,9 @@ param ollamaVmSize = 'Standard_B4as_v2'
 param adminPublicKey = ''
 
 param multiAgentToken = readEnvironmentVariable('MULTI_AGENT_TOKEN')
+
+// Bearer token bills-db requires on every route but /health.
+param billsDbToken = readEnvironmentVariable('BILLS_DB_TOKEN')
+
+// Empty until an allowlist is tested against the live deployment; any entry denies the rest.
+param dbAllowedSourceIps = []

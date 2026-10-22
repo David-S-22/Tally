@@ -68,6 +68,7 @@ jobs:
           REQUESTED_TARGET: ${{ inputs.target || 'auto' }}
           BEFORE_SHA: ${{ github.event.before }}
           MULTI_AGENT_TOKEN: ${{ secrets.MULTI_AGENT_TOKEN }}
+          BILLS_DB_TOKEN: ${{ secrets.BILLS_DB_TOKEN }}
           AI_VM_SSH_PUBLIC_KEY: ${{ secrets.AI_VM_SSH_PUBLIC_KEY }}
         shell: bash
         run: |
