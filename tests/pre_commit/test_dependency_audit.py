@@ -21,7 +21,7 @@ def test_dependency_audit(requirements):
     # shortcut: --no-deps --disable-pip audits only the pinned top-level packages
     # and needs every line pinned (==); drop both flags if ~2 min per file becomes acceptable
     command = [sys.executable, "-m", "pip_audit", "--no-deps", "--disable-pip",  # noqa: S603
-               "--progress-spinner", "off"]
+               "--progress-spinner", "off", "--timeout", "60"]
     has_unfixed_chromadb = any(
         re.match(r"^\s*chromadb\s*==\s*1\.5\.9(?:\s*(?:#.*)?)?$", line, re.IGNORECASE)
         for line in requirements.read_text(encoding="utf-8").splitlines()
