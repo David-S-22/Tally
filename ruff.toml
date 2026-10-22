@@ -1,0 +1,23 @@
+# Security-only lint for the pre-commit hook; style rules stay with each service.
+target-version = "py312"
+extend-exclude = ["node_modules"]
+
+[lint]
+select = ["S"]
+ignore = [
+    "S104",  # every service binds 0.0.0.0 on purpose, Docker publishes the port
+    "S101",  # assert in production code is accepted group-wide
+    "S110",  # try/except/pass in sophia's chat fallback
+    "S113",  # requests calls to sibling services on the Docker network run without timeouts
+    "S310",  # urlopen on fixed http(s) localhost URLs
+    "S311",  # random is used for demo data, not secrets
+    "S603",  # subprocess calls take fixed argv lists, no shell
+    "S607",  # partial executable paths are the gh and docker CLIs on PATH
+    "S608",  # SQL built from an allow-listed column set, values stay parameterised
+]
+
+[lint.per-file-ignores]
+# tests pass fake tokens
+"**/test/**" = ["S105", "S106"]
+"**/tests/**" = ["S105", "S106"]
+"**/test_*.py" = ["S105", "S106"]

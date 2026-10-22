@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
+cd "$(dirname "$0")"
 
 ACR_NAME="tallyasd21"
 RESOURCE_GROUP="ASD-GROUP-21"
 LOGIN_SERVER="${ACR_NAME}.azurecr.io"
 VM_NAME="vm-tally-ollama"
+AI_VM_NAME="vm-tally-ai"
+AI_DNS_NAME="tally-ai.australiaeast.cloudapp.azure.com"
 DNS_NAME="tally-ollama.australiaeast.cloudapp.azure.com"
 OLLAMA_PORT="11434"
 OLLAMA_URL="http://${DNS_NAME}:${OLLAMA_PORT}"
@@ -162,9 +165,84 @@ update_container_apps() {
     done
 }
 
-TARGET="${1:-containers}"
+# Native Python services: provision once, then pull code only on deployment.
+provision_ai_vms() {
+    local force=false
+    if [ "${1:-}" = "--force" ]; then
+        force=true
+    fi
 
+    if az vm show -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" &>/dev/null; then
+        if [ "$force" = false ]; then
+            echo "==> AI VM '$AI_VM_NAME' already exists in '$RESOURCE_GROUP'."
+            echo "==> Updating AI services instead of reprovisioning (pass --force to reprovision)..."
+            update_ai_services_vm
+            return 0
+        else
+            echo "==> Force reprovision requested. Deleting existing VM '$AI_VM_NAME'..."
+            az vm delete -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" --yes
+        fi
+    fi
+
+    : "${MULTI_AGENT_TOKEN:?Set MULTI_AGENT_TOKEN before provisioning}"
+    [[ "$MULTI_AGENT_TOKEN" =~ ^[A-Za-z0-9_-]{32,}$ ]] || { echo 'Use a token of 32+ letters, digits, underscores or hyphens.' >&2; return 1; }
+    export CONTAINER_DOMAIN
+    CONTAINER_DOMAIN=$(az containerapp env show -g "$RESOURCE_GROUP" -n cae-tally --query properties.defaultDomain -o tsv)
+    export AI_VM_SSH_PUBLIC_KEY="${AI_VM_SSH_PUBLIC_KEY:-$(cat "$HOME/.ssh/id_rsa.pub" 2>/dev/null || true)}"
+    az deployment group create -g "$RESOURCE_GROUP" --name tally-ai-vms \
+        --template-file bicep/ai-services.bicep --parameters bicep/ai-services.bicepparam --output none
+    for service in rag mcp multi-agent; do check_ai_endpoint "$service"; done
+}
+
+update_ai_services_vm() {
+    local services=("$@")
+    local service result
+    [ "${#services[@]}" -gt 0 ] || services=(rag mcp multi-agent)
+    echo "==> Ensuring AI VM '$AI_VM_NAME' is running..."
+    az vm start -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" --output none
+    for service in "${services[@]}"; do
+        case "$service" in mcp|rag|multi-agent) ;; *) echo "Unknown service: $service" >&2; return 1 ;; esac
+        echo "==> Updating AI service: $service on $AI_VM_NAME..."
+        # Azure Run Command can return success even when the script fails.
+        result=$(az vm run-command invoke -g "$RESOURCE_GROUP" -n "$AI_VM_NAME" \
+            --command-id RunShellScript \
+            --scripts "/usr/local/bin/tally-ai-service $service && echo TALLY_UPDATE_OK" \
+            --query 'value[0].message' -o tsv)
+        printf '%s\n' "$result"
+        [[ "$result" == *TALLY_UPDATE_OK* ]] || return 1
+        check_ai_endpoint "$service"
+    done
+}
+
+check_ai_endpoint() {
+    local service="$1" endpoint expected code
+    case "$service" in
+        mcp) endpoint=8000/mcp; expected='^(200|400|406)$' ;;
+        rag) endpoint=5003/health; expected='^200$' ;;
+        multi-agent) endpoint=5010/health; expected='^401$' ;; # Requires authentication.
+    esac
+    code=$(curl -sS --retry 12 --retry-connrefused --retry-delay 5 --max-time 30 \
+        -o /dev/null -w '%{http_code}' "http://$AI_DNS_NAME:$endpoint")
+    [[ "$code" =~ $expected ]] || { echo "$service endpoint failed: HTTP $code" >&2; return 1; }
+}
+
+TARGET="${1:-containers}"
 case "$TARGET" in
+    ai-vms|--ai-vms)
+        shift || true
+        provision_ai_vms "$@"
+        exit 0
+        ;;
+    ai-vms-force|--ai-vms-force)
+        shift || true
+        provision_ai_vms --force "$@"
+        exit 0
+        ;;
+    ai-update|--ai-update)
+        shift
+        update_ai_services_vm "$@"
+        exit 0
+        ;;
     --health|health)
         show_health
         exit 0
@@ -190,21 +268,29 @@ case "$TARGET" in
         DEPLOY_VM=true
         ;;
     *)
-        echo "Usage: ./deploy.sh [all | containers | update | vm | health]"
+        echo "Usage: ./deploy.sh [all | containers | update | vm | health | ai-vms | ai-vms-force | ai-update]"
         echo ""
         echo "Options:"
-        echo "  containers  Deploy microservice containers via Bicep, no Ollama VM (default)"
-        echo "              This is the required cloud baseline: AI mode, MCP, RAG"
-        echo "              and the Multi-Agent Server are all off."
-        echo "  all         Deploy Ollama VM, verify health, then deploy containers."
-        echo "              Optional AI topology, assessed under Bonus Marks only;"
-        echo "              pass enableAi=true to actually turn AI mode on."
-        echo "  update      Fast update: rebuild, push, then update apps four at a time (skips Bicep)"
-        echo "  vm          Deploy Ollama VM only and wait for health check"
-        echo "  health      Check current health and models of the Ollama VM"
+        echo "  containers    Deploy microservice containers via Bicep, no Ollama VM (default)"
+        echo "                The required cloud baseline: AI mode, MCP, RAG and the"
+        echo "                Multi-Agent Server are all off."
+        echo "  all           Deploy Ollama, containers and the shared AI VM."
+        echo "                Optional AI topology, assessed under Bonus Marks only;"
+        echo "                pass enableAi=true to actually turn AI mode on."
+        echo "  update        Fast update: rebuild, push, then update apps four at a time (skips Bicep)"
+        echo "  vm            Deploy Ollama VM only and wait for health check"
+        echo "  ai-vms        Ensure the shared VM is provisioned (updates services if already exists)"
+        echo "  ai-vms-force  Delete and reprovision the shared AI VM from scratch via Bicep"
+        echo "  ai-update     Update Python services; optionally append mcp, rag, multi-agent"
+        echo "  health        Check current health and models of the Ollama VM"
         exit 1
         ;;
 esac
+
+# Validate required configuration before any infrastructure changes.
+if [ "$DEPLOY_CONTAINERS" = true ]; then
+    : "${MULTI_AGENT_TOKEN:?Set MULTI_AGENT_TOKEN before deploying backend configuration}"
+fi
 
 # --- Pre-flight Health Notice for Containers ---
 if [ "$DEPLOY_CONTAINERS" = true ] && [ "$DEPLOY_VM" = false ]; then
@@ -261,6 +347,10 @@ if [ "$DEPLOY_CONTAINERS" = true ]; then
         --parameters deployOllamaVm=false \
         --parameters imageTag="$IMAGE_TAG" \
         --rollback-on-error
+fi
+
+if [ "$TARGET" = all ] || [ "$TARGET" = --all ]; then
+    provision_ai_vms
 fi
 
 echo "==> Deployment completed successfully!"

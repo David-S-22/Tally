@@ -14,10 +14,17 @@ param imageTag string = 'latest'
 param targetPort int
 param externalIngress bool = false
 param env array = []
+@secure()
+param appSecrets object = {}
 param cpu string = '0.25'
 param memory string = '0.5Gi'
 param minReplicas int = 0
 param maxReplicas int = 1
+
+var additionalSecrets = [for secret in items(appSecrets): {
+  name: secret.key
+  value: secret.value
+}]
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
@@ -36,12 +43,12 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           }
         ]
       }
-      secrets: [
+      secrets: concat([
         {
           name: 'acr-password'
           value: acrAdminPassword
         }
-      ]
+      ], additionalSecrets)
       registries: [
         {
           server: acrLoginServer

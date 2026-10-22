@@ -508,14 +508,12 @@ def test_fetch_mcp_tools_returns_empty_when_mcp_disabled():
     assert fetch_mcp_tools(mcp_enabled=False) == []
 
 
-def test_execute_mcp_tool_raises_when_mcp_disabled():
-    with pytest.raises(RuntimeError, match="MCP is disabled"):
-        execute_mcp_tool("search_transactions", {}, mcp_enabled=False)
+def test_execute_mcp_tool_returns_empty_when_mcp_disabled():
+    assert execute_mcp_tool("search_transactions", {}, mcp_enabled=False) == []
 
 
-def test_execute_mcp_tool_raises_when_rag_disabled():
-    with pytest.raises(RuntimeError, match="RAG is disabled"):
-        execute_mcp_tool("retrieve_context", {}, rag_enabled=False)
+def test_execute_mcp_tool_returns_empty_when_rag_disabled():
+    assert execute_mcp_tool("retrieve_context", {}, rag_enabled=False) == []
 
 
 @pytest.mark.parametrize(

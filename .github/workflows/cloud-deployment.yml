@@ -12,13 +12,18 @@ on:
       - "sophia/**"
       - "shared/**"
       - "bicep/**"
+      - "ai-services/mcp-server/**"
+      - "ai-services/rag-server/**"
+      - "ai-services/multi-agent-server/**"
+      - "prompts/multi_agent/**"
+      - "scripts/**"
       - "deploy.sh"
       - ".github/workflows/cloud-deployment.yml"
       - ".dockerignore"
   workflow_dispatch:
     inputs:
       target:
-        description: 'Deployment target (auto, update, containers, all)'
+        description: 'Deployment target'
         required: false
         default: 'auto'
         type: choice
@@ -26,7 +31,7 @@ on:
           - auto
           - update
           - containers
-          - all
+          - ai-update
 
 concurrency:
   group: production-deployment
@@ -39,14 +44,14 @@ permissions:
 jobs:
   deploy:
     if: github.ref == 'refs/heads/main'
-    name: Build and deploy containers to Azure
+    name: Deploy applications and AI VMs to Azure
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -58,22 +63,41 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy containers
+      - name: Deploy changed services
+        env:
+          REQUESTED_TARGET: ${{ inputs.target || 'auto' }}
+          BEFORE_SHA: ${{ github.event.before }}
+          MULTI_AGENT_TOKEN: ${{ secrets.MULTI_AGENT_TOKEN }}
+          AI_VM_SSH_PUBLIC_KEY: ${{ secrets.AI_VM_SSH_PUBLIC_KEY }}
+        shell: bash
         run: |
-          chmod +x ./deploy.sh
-
-          TARGET="${{ inputs.target || 'auto' }}"
-          if [ "$TARGET" = "auto" ]; then
-            if ! git rev-parse HEAD~1 &>/dev/null; then
-              echo "==> No parent commit found. Running full Bicep rollout..."
-              TARGET="containers"
-            elif git diff --name-only HEAD~1 HEAD | grep -E "^(bicep/|deploy\.sh)"; then
-              echo "==> Infrastructure or deployment script changes detected. Running full Bicep rollout..."
-              TARGET="containers"
-            else
-              echo "==> Application code changes only. Running fast container update (skipping Bicep)..."
-              TARGET="update"
-            fi
+          set -euo pipefail
+          if [ "$REQUESTED_TARGET" != auto ]; then
+            bash ./deploy.sh "$REQUESTED_TARGET"
+            exit 0
+          fi
+          # github.event.before covers every commit in a push, including merged branches.
+          if [ -z "$BEFORE_SHA" ] || ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            CHANGED=$(git ls-files)
+          else
+            CHANGED=$(git diff --name-only "$BEFORE_SHA" HEAD)
           fi
 
-          ./deploy.sh "$TARGET"
+          if grep -Eq '^(bicep/|scripts/|deploy\.sh|\.github/workflows/cloud-deployment\.yml)' <<< "$CHANGED"; then
+            bash ./deploy.sh containers
+            bash ./deploy.sh ai-update
+            exit 0
+          fi
+
+          if grep -Eq '^(aiden/|david/|ethan/|janelle/|sophia/|shared/|\.dockerignore)' <<< "$CHANGED"; then
+            bash ./deploy.sh update
+          fi
+          if grep -q '^ai-services/mcp-server/' <<< "$CHANGED"; then
+            bash ./deploy.sh ai-update mcp
+          fi
+          if grep -q '^ai-services/rag-server/' <<< "$CHANGED"; then
+            bash ./deploy.sh ai-update rag
+          fi
+          if grep -Eq '^(ai-services/multi-agent-server/|prompts/multi_agent/)' <<< "$CHANGED"; then
+            bash ./deploy.sh ai-update multi-agent
+          fi
