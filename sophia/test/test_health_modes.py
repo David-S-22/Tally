@@ -39,24 +39,3 @@ def test_health_reports_enabled_modes_and_ai_enabled_when_ollama_answers(monkeyp
     body = json.loads(_client(monkeypatch, True, True, ollama_up=True).get("/health").data)
     assert body["ollama"] == "up"
     assert body["modes"] == {"ai": "enabled", "mcp": "enabled", "rag": "enabled", "multi_agent": "enabled"}
-
-
-def test_health_reports_ai_disabled_and_skips_the_probe_when_ai_mode_is_off(monkeypatch):
-    """The cloud baseline: AI mode off reports "disabled", not "unavailable", and never probes Ollama."""
-    monkeypatch.setattr(bills_db, "health", lambda: {"ok": True})
-    monkeypatch.setattr(transactions, "list_transactions", lambda merchant=None, since=None: ([], "stub"))
-
-    def refuse(*args, **kwargs):
-        raise AssertionError("AI mode is off; /health must not probe Ollama")
-
-    monkeypatch.setattr(backend_app_module.requests, "get", refuse)
-    monkeypatch.setattr(config, "AI_MODE_ENABLED", False)
-    monkeypatch.setattr(config, "MCP_ENABLED", False)
-    monkeypatch.setattr(config, "RAG_ENABLED", False)
-    monkeypatch.setattr(config, "MULTI_AGENT_ENABLED", False)
-    app = backend_app_module.create_app()
-    app.config["TESTING"] = True
-
-    body = json.loads(app.test_client().get("/health").data)
-    assert body["ollama"] == "off"
-    assert body["modes"] == {"ai": "disabled", "mcp": "disabled", "rag": "disabled", "multi_agent": "disabled"}

@@ -54,7 +54,7 @@ flowchart TB
         MCPS["MCP server · :8000 (R1)<br/>bills + transactions tools"]
         RAG["RAG server · :5003 (R1)<br/>retrieval only"]
         MA["Multi-Agent Server · :5010 (R2)<br/>Planner → Worker → Reviewer"]
-        OL["Ollama · :11434<br/>AI-Mode (R0)<br/>AI_MODE_ENABLED"]
+        OL["Ollama · :11434<br/>AI-Mode (R0)"]
         MCPS -->|"retrieve_context"| RAG
         MA -->|"3 sequential calls"| OL
     end
@@ -67,7 +67,7 @@ flowchart TB
     class MA r2;
 ```
 
-Switches: `AI_MODE_ENABLED`, `MCP_ENABLED`, `RAG_ENABLED`, `MULTI_AGENT_ENABLED` on bills-backend (code default off; CI and the cloud baseline `false`; compose defaults them on for the local AI topology). With a switch off the matching route answers 503 with a safe code (`ai_disabled`, `multi_agent_disabled`) and the rest of Bills works unchanged. `AI_MODE_ENABLED` gates `guard.run` before its first attempt, so a disabled deployment refuses rather than serving the templated fallback as though the model had replied, and `/health` reports `modes.ai: "disabled"` without probing Ollama.
+Switches: `MCP_ENABLED`, `RAG_ENABLED`, `MULTI_AGENT_ENABLED` on bills-backend (code default off; CI and the cloud baseline `false`). With a switch off the matching route answers 503 with a safe code (`multi_agent_disabled`) and the rest of Bills works unchanged.
 
 ## 3. Deployment flow (Bills slice of the group pipeline)
 
@@ -75,13 +75,11 @@ Switches: `AI_MODE_ENABLED`, `MCP_ENABLED`, `RAG_ENABLED`, `MULTI_AGENT_ENABLED`
 flowchart LR
     DEV["Developer commit<br/>(pre-commit: Ruff security, detect-secrets, pip-audit — group hooks)"]
     PR["Pull request to main"]
-    CI["Sophia-CI.yml<br/>test (178 core tests) ·<br/>agentic-loop (41) ·<br/>docker-health (bills containers, modes off)"]
+    CI["Sophia-CI.yml<br/>test (169 core tests, 7 s) ·<br/>agentic-loop (41) ·<br/>docker-health (bills containers, modes off)"]
     MAIN["Merge to main"]
-    CD["cloud-deployment.yml<br/>(David) build → ACR → Bicep<br/>./deploy.sh containers (default)"]
-    ACA["Azure Container Apps<br/>bills-frontend / backend / db<br/>AI-Mode, MCP, RAG, Multi-Agent off<br/>enableAi / enableMcp / enableRag = false"]
+    CD["cloud-deployment.yml<br/>(David) build → ACR → Bicep"]
+    ACA["Azure Container Apps<br/>bills-frontend / backend / db<br/>AI-Mode, MCP, RAG, Multi-Agent off"]
     DEV --> PR --> CI --> MAIN --> CD --> ACA
 ```
-
-`./deploy.sh` defaults to `containers`, the required baseline: no Ollama VM, and all four switches off. `./deploy.sh all` provisions the Ollama VM for the optional AI topology (Bonus Marks), and AI mode still needs `enableAi=true` passed explicitly — the VM existing does not turn AI on. `cloud-deployment.yml` passes `containers` or `update` explicitly, so the pipeline does not deploy the VM; the old `all` default only applied to a hand-run `./deploy.sh`.
 
 The two post-commit endpoint tests Sophia-CI runs on every push (criterion 4) are `test_multi_agent_routes.py::test_letter_workflow_sends_bills_evidence_and_waits_for_the_human` (`POST /api/disputes/<id>/workflow`) and `::test_accept_stores_the_letter_as_the_next_draft_with_the_review` (`POST /api/disputes/<id>/workflow/<workflow_id>/decision`), both driving the real server coordinator with a fake model on the live seeded database; the `docker-health` job then calls the built container's `/health`, `/api/evidence` and `/api/tools/retrieve_context` and asserts the modes-off refusals.

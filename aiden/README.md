@@ -13,8 +13,6 @@ containerised frontend, backend, database, and model components.
   conceptual, logical, and physical ERDs.
 - [Test documentation](test/README.md) — backend and database testing, including
   service integration with `responses`.
-- [AI mode switch](../docs/release-2/shared/ai-mode-switch.md) — `AI_MODE_ENABLED`
-  across all five backends, and the cloud baseline it exists for.
 
 ## Directory overview
 

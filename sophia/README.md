@@ -57,15 +57,15 @@ Architecture diagrams:
 | Service | Port | Key env vars |
 |---|---|---|
 | `bills-frontend` | 3005 | — (static + nginx proxy) |
-| `bills-backend` | 5005 | `PORT`, `BILLS_DB_API_URL` (default `http://bills-db:6005`), `FRONTEND_ORIGIN` (default `http://localhost:3005`), `TRANSACTIONS_DB_API_URL` (optional; unset → stub), `AI_MODE_ENABLED` (code default **off**), `OLLAMA_URL` (default `http://host.docker.internal:11434`), `DRAFT_MODEL` (`llama3.1:8b`), `CHAT_MODEL` (`qwen2.5:3b`), `DEMO_TODAY` (default `2026-10-01`), `AI_TIMEOUT_SECONDS` (default `90`), `OLLAMA_KEEP_ALIVE` (default `30m`), `AI_TEMPERATURE` (default `0.2`), `GROUNDED_TEMPERATURE` (default `0`) |
+| `bills-backend` | 5005 | `PORT`, `BILLS_DB_API_URL` (default `http://bills-db:6005`), `FRONTEND_ORIGIN` (default `http://localhost:3005`), `TRANSACTIONS_DB_API_URL` (optional; unset → stub), `OLLAMA_URL` (default `http://host.docker.internal:11434`), `DRAFT_MODEL` (`llama3.1:8b`), `CHAT_MODEL` (`qwen2.5:3b`), `DEMO_TODAY` (default `2026-10-01`), `AI_TIMEOUT_SECONDS` (default `90`), `OLLAMA_KEEP_ALIVE` (default `30m`), `AI_TEMPERATURE` (default `0.2`), `GROUNDED_TEMPERATURE` (default `0`) |
 | `bills-db` | 6005 | `PORT`, `DB_PATH` (default `./bills.db`) |
 
 `DEMO_TODAY` is parsed once in `sophia/backend/config.py`; nothing under
 `sophia/backend/engine/` ever calls `date.today()` or `datetime.now()` —
 every engine function takes `today` as an explicit argument.
 
-Compose sets `PORT`, `BILLS_DB_API_URL`, `FRONTEND_ORIGIN`, `OLLAMA_URL`, `OLLAMA_KEEP_ALIVE` and the AI/MCP/RAG/Multi-Agent switches
-for the backend (`AI_MODE_ENABLED: ${AI_MODE_ENABLED:-true}`, so local compose is the AI topology while the code default stays off) — the model and demo-clock values are in-container defaults
+Compose sets `PORT`, `BILLS_DB_API_URL`, `FRONTEND_ORIGIN`, `OLLAMA_URL`, `OLLAMA_KEEP_ALIVE` and the MCP/RAG switches
+for the backend — the model and demo-clock values are in-container defaults
 from `config.py`. In compose, Bills uses the team's shared `ollama` service
 (`OLLAMA_URL=http://ollama:11434`); the first `docker compose up ollama`
 pulls three models into its volume (`llama3.1:8b` 4.9 GB, `qwen2.5:3b`
@@ -87,11 +87,7 @@ Exactly two, both through `sophia/backend/ai/guard.py`: validate the JSON
 response against a hand-written schema (`ai/schemas.py`, no jsonschema/
 pydantic), retry once with the validation error appended to the prompt on
 failure, and fall back to a templated response (`fallback: true`) if the
-second attempt also fails. Neither call raises out to the route on a model
-failure — the fallback covers that. The one exception is the switch: with
-`AI_MODE_ENABLED` off, `guard.run` raises `ModeError("ai_disabled")` before
-the first attempt, so a disabled deployment answers 503 instead of serving
-the templated fallback as though the model had replied.
+second attempt also fails. Neither call ever raises out to the route.
 
 1. **Dispute drafting** (`ai/dispute_prompt.py`, `DRAFT_MODEL`): given the
    bill, its last 6 payments, the reason, and the payment method (or "not
@@ -188,7 +184,7 @@ Two tools are called: `search_transactions(merchant=<bill.merchant>)` (Tools car
 Switches and knobs: `MCP_ENABLED`, `RAG_ENABLED` (code default off; compose `${…:-true}`; CI `"false"`), `MCP_TIMEOUT_SECONDS` (15), `MCP_ALLOWED_TOOLS`, `RAG_TOP_K` (3), `RAG_HIGH`/`RAG_MEDIUM`/`RAG_LOW` (0.8/1.1/1.4), `GROUNDED_TIMEOUT_SECONDS` (20 s per model attempt), `OLLAMA_KEEP_ALIVE` (30m; how long Ollama keeps a model loaded after a call), `AI_TEMPERATURE` (0.2; chat and dispute drafts), `GROUNDED_TEMPERATURE` (0; the grounded answer, so the same question gets the same answer).
 Codes: 503 `mcp_disabled`, `rag_disabled`, `mcp_connection`, `mcp_timeout`, `rag_unavailable` (the RAG server failing behind the MCP server); 502 `mcp_tool_error`, `mcp_invalid_result`; 400 `tool_not_allowed`. User copy never names a host, port or upstream text.
 Routes: `GET /api/tools`, `POST /api/tools/<name>`, `POST /api/evidence`; fragments `GET /ui/tools`, `POST /ui/tools/search_transactions`, `GET /ui/evidence`, `POST /ui/evidence`.
-Start order for a live run: `docker compose up -d`, then `python ai-services/rag-server/server.py`, then `python ai-services/mcp-server/server.py`. Compose defaults `AI_MODE_ENABLED` to `true`, so Ollama is reached as before; running bills-backend bare needs `AI_MODE_ENABLED=true` set explicitly, because the code default is off. Sophia-CI runs with both switches `"false"` and asserts the refusal; it has no `rag` job and its path filter is `ai-services/rag-server/sources/billing/**`; `python sophia/rag/mcp_ragtest.py` is the terminal check of both tools.
+Start order for a live run: `docker compose up -d`, then `python ai-services/rag-server/server.py`, then `python ai-services/mcp-server/server.py`. Sophia-CI runs with both switches `"false"` and asserts the refusal; it has no `rag` job and its path filter is `ai-services/rag-server/sources/billing/**`; `python sophia/rag/mcp_ragtest.py` is the terminal check of both tools.
 
 ## Multi-Agent Server (Bills, Release 2)
 
@@ -199,7 +195,7 @@ bills-backend reaches the shared Multi-Agent Server (`ai-services/multi-agent-se
 
 Known limits (Release 2): runs live in bills-backend's memory, so a backend restart forgets an in-flight run while the server keeps its workflow pending, and a client timeout (600 s) leaves a server-side workflow Bills never learns the id of; Bills does not call `GET /workflow/status` to recover either case, and a run that could not start (server down, busy, timeout) simply hands the suggestion back to its Release 1 Approve/Reject card. While a suggestion's run is in flight its card shows the polling block instead of the Release 1 buttons; on a CPU-only machine that can be minutes, so the demo profile below matters. A decision is only accepted for the dispute or suggestion whose workflow it is (the server echoes the Bills `context`), decided runs are kept in memory up to the last 20, and the review block then shows the stored draft or applied change, not the form.
 Runs are asynchronous: a workflow is three sequential model calls and the server runs one at a time, so `start_*` returns a run id, a one-worker executor runs it, and the `agent_review.html` block polls `GET /ui/workflow-runs/<run_id>` every 2 s showing which agent is working. Bills' own runs queue in front of the server's single slot instead of tripping `workflow_busy`. The server's decision rules (Partially Accept needs a reason; accepting a non-approve verdict needs a reason; a failed run is reject-only; one decision per workflow) are checked in `services/multi_agent.py` first so the user sees a plain message.
-Switches and knobs: `MULTI_AGENT_ENABLED` (code default off; compose `${MULTI_AGENT_ENABLED:-true}` on bills-backend, the same shape as `MCP_ENABLED` and the multi-agent env Savings carries since #222; CI and the cloud baseline `"false"`), `MULTI_AGENT_SERVER_URL` and `MULTI_AGENT_TIMEOUT_SECONDS` (code defaults `http://host.docker.internal:5010` and 600, the server's model deadline being 540 s). In compose the last three take the same repository-root `.env` parameters Savings reads, so one file drives both backends: `${MULTI_AGENT_URL:-http://host.docker.internal:5010}`, `${MULTI_AGENT_TOKEN:-}` (the file the server itself reads) and `${MULTI_AGENT_TIMEOUT:-600}` (Savings defaults that key to 1800; Bills keeps 600, the value its 540 s server deadline was chosen against). The names differ either side of the colon because the two services read different variables: Savings takes `MULTI_AGENT_URL`/`MULTI_AGENT_TIMEOUT` directly, Bills the `_SERVER_URL`/`_SECONDS` pair above. The review block polls every 2 s (`agent_review.html`). `bicep/main.bicep` sets none of these: the code default keeps Multi-Agent off in the cloud baseline. Multi-Agent is the only one of the four without a Bicep parameter; AI mode, MCP and RAG each have one (`enableAi`, `enableMcp`, `enableRag`, all default `false`) — see [Cloud baseline](#cloud-baseline-ai-mcp-rag-and-multi-agent-off) below.
+Switches and knobs: `MULTI_AGENT_ENABLED` (code default off; compose `${MULTI_AGENT_ENABLED:-true}` on bills-backend, the same shape as `MCP_ENABLED` and the multi-agent env Savings carries since #222; CI and the cloud baseline `"false"`), `MULTI_AGENT_SERVER_URL` and `MULTI_AGENT_TIMEOUT_SECONDS` (code defaults `http://host.docker.internal:5010` and 600, the server's model deadline being 540 s). In compose the last three take the same repository-root `.env` parameters Savings reads, so one file drives both backends: `${MULTI_AGENT_URL:-http://host.docker.internal:5010}`, `${MULTI_AGENT_TOKEN:-}` (the file the server itself reads) and `${MULTI_AGENT_TIMEOUT:-600}` (Savings defaults that key to 1800; Bills keeps 600, the value its 540 s server deadline was chosen against). The names differ either side of the colon because the two services read different variables: Savings takes `MULTI_AGENT_URL`/`MULTI_AGENT_TIMEOUT` directly, Bills the `_SERVER_URL`/`_SECONDS` pair above. The review block polls every 2 s (`agent_review.html`). `bicep/main.bicep` sets none of these: the code default keeps Multi-Agent off in the cloud baseline.
 Codes: 503 `multi_agent_disabled`, `multi_agent_connection`, `multi_agent_timeout`, `multi_agent_busy`, `multi_agent_unauthorized`; 502 `multi_agent_error`, `multi_agent_invalid_result`; 409 `multi_agent_rejected` (a second decision or a request the server refused), `multi_agent_failed` (anything but Reject on a failed run); 404 for an unknown workflow or run.
 Routes: `POST /api/disputes/<id>/workflow` (202, `{run_id}`), `GET /api/workflow-runs/<run_id>`, `POST /api/disputes/<id>/workflow/<workflow_id>/decision` and `POST /api/chat/suggestions/<id>/workflow/<workflow_id>/decision` with `{decision, corrected_output?, reason?}`; fragments `POST /ui/disputes/<id>/workflow`, `GET /ui/workflow-runs/<run_id>`, `POST /ui/disputes/<id>/workflow/<wid>/decision`, `POST /ui/suggestions/<id>/workflow/<wid>/decision`. `/health` reports `modes.multi_agent`.
 Latency: the shared server's defaults (`qwen2.5:3b` planner and worker, `llama3.1:8b` reviewer) took 43–165 s per workflow in the server's verified runs and minutes on a CPU-only machine, so the UI never blocks on a run. Demo profile, measured on the demo laptop (RTX 3060 Laptop, 6 GB VRAM) with `python -m sophia.eval.time_workflow --runs 3`, 20 Oct 2026:
@@ -210,34 +206,6 @@ Latency: the shared server's defaults (`qwen2.5:3b` planner and worker, `llama3.
 | `qwen2.5:3b` | 6 | 25.6 s (10.1–32.0) | ~3.7 / ~2.6 / 4.2–25.7 s | One model, 100% GPU, nothing to swap. 4 of 6 reviewer replies failed validation and needed the server's one repair (~21 s lost); every repaired run returned reject |
 
 Run the demo with `MULTI_AGENT_REVIEWER_MODEL=qwen2.5:3b` on the server. It halves the wait, and its worst run (32 s) beats the 8b's best (48 s). The cost: the 20 s target is met in only 2 of 6 runs, and a repaired run says reject even on a usable letter. That is a reviewer quality limit, not a failure; Accept against the reviewer with a reason is the intended human override. The 8b reviewer is no more accurate on this task: in all three runs it said the evidence "only shows" the $17.99 charge, though the evidence lists all three. The evidence runs in `docs/release-2/sophia/multi-agent/` used the default profile. Start order for a live run adds `python ai-services/multi-agent-server/server.py`. `sophia/test/test_multi_agent_routes.py` drives the real server coordinator (fake model) behind the client on the live database, so both sides of the contract are tested together.
-
-## Cloud baseline (AI, MCP, RAG and Multi-Agent off)
-
-The assessed cloud deployment must have all four AI services disabled by
-default; enabling them in the cloud is optional and scored only under Bonus
-Marks. Each one is a real switch with its own refusal, not an absent
-dependency:
-
-| Mode | Switch | Code default | Bicep | Refusal |
-|---|---|---|---|---|
-| AI mode | `AI_MODE_ENABLED` | off | `enableAi` (`false`) | 503 `ai_disabled` |
-| MCP | `MCP_ENABLED` | off | `enableMcp` (`false`) | 503 `mcp_disabled` |
-| RAG | `RAG_ENABLED` | off | `enableRag` (`false`) | 503 `rag_disabled` |
-| Multi-Agent | `MULTI_AGENT_ENABLED` | off | none (code default) | 503 `multi_agent_disabled` |
-
-AI mode gates `guard.run` and `ollama_client.chat`, so with it off no model
-call is attempted and `/health` reports `"ollama": "off"` and
-`modes.ai: "disabled"` without probing Ollama at all. This matters for the
-report wording: a deployment that merely lacks a reachable Ollama is not
-"disabled" — it is broken, and it presents as a timeout rather than a clean
-refusal. `sophia/test/test_ai_mode_switch.py` asserts the refusal and that no
-socket is opened.
-
-`./deploy.sh` defaults to `containers`: the required baseline, no Ollama VM.
-`./deploy.sh all` provisions the VM for the optional AI topology, and AI mode
-still needs `enableAi=true` passed explicitly — deploying the VM does not by
-itself turn AI on. `bicep/main.bicepparam` states all three parameters
-explicitly so the baseline is readable in one file.
 
 ## Inbound contracts
 

@@ -21,17 +21,6 @@ It also sets `RAG_SERVER_URL` to the shared, retrieve-only RAG server at
 `http://host.docker.internal:5003` and `RAG_FEATURE` to `anomalies`; RAG can be
 disabled with `RAG_ENABLED=false`. The RAG server is likewise not containerised.
 
-`AI_MODE_ENABLED` gates every model call. It is the one setting that is
-optional rather than required: unlike the variables above it is not resolved
-through `_resolve` and is not listed in `check_all()`, because **absent means
-off**, so a deployment that configures nothing refuses rather than dialling
-whatever `OLLAMA_URL` happens to point at. With it off, `ollama_api.prompt`
-raises `AIError("ai_disabled")` before a client is built and no socket is
-opened. Compose sets `${AI_MODE_ENABLED:-true}`, so local development is
-unchanged; the required cloud baseline leaves it off (Bicep `enableAi`,
-default `false`). See
-[AI mode switch](../../docs/release-2/shared/ai-mode-switch.md).
-
 ## Agentic workflow
 
 1. The frontend sends a transaction to `POST /check-transaction`.

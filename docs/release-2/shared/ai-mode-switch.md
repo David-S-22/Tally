@@ -74,10 +74,22 @@ hand-run `./deploy.sh`.
 
 ## Tests
 
-Each backend has a `test_ai_mode_switch.py` asserting the refusal and that no
-request is attempted. The suites drive the AI paths behind fakes, so each
-`conftest.py` has an autouse `ai_mode_on` fixture that turns the switch on;
-the tests that assert the refusal turn it back off.
+`sophia/test/test_ai_mode_switch.py` covers the switch: `guard.run` refuses
+before any attempt, refuses rather than returning the fallback, `warm` sends
+nothing, and the on-path still works. Its first two cases are in
+`sophia/test/ci_core.txt`, so CI runs them on every push.
+
+That file is the only dedicated test for the switch. The other four backends
+gate the same way (see the table above) but are covered only by their
+existing suites continuing to pass — if you change a gate in janelle, aiden,
+ethan or david, nothing will fail that specifically tells you the refusal
+broke. A matching test per backend is the obvious follow-up.
+
+Every suite does carry an autouse `ai_mode_on` fixture in its `conftest.py`.
+That is **not** optional and is not a convenience: `AI_MODE_ENABLED` defaults
+off, the suites drive the AI paths behind fakes, and without the fixture the
+existing tests fail (35 in janelle, 344 in sophia). Removing one does not
+remove a test — it breaks the suite.
 
 Run them per module — the five suites share a top-level `backend` package
 name and collide when collected together:
@@ -90,6 +102,5 @@ python -m pytest ethan -q
 python -m pytest david -q
 ```
 
-Bills documents its own slice in
-[`sophia/README.md`](../../../sophia/README.md) under "Cloud baseline";
-`ethan` and `david` have no README, so this document is their reference.
+This document is the reference for all five backends; none of the module
+READMEs describe the switch.
