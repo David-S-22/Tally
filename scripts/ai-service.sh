@@ -45,9 +45,11 @@ if [ "$mode" = setup ]; then
 fi
 revision=$(git rev-parse HEAD)
 previous=$(cat "$revision_file" 2>/dev/null || true)
+# Keep the service's lock and database directory writable after recreation.
+install -d -o tally -g tally -m 0750 /var/lib/tally/logs
 paths=("ai-services/$service-server" scripts/ai-service.sh)
 [ "$service" != multi-agent ] || paths+=(prompts/multi_agent)
-if [ "$mode" = update ] && [ -d "$venv" ] && [ -n "$previous" ] && git diff --quiet "$previous" "$revision" -- "${paths[@]}"; then
+if [ "$mode" = update ] && [ -d "$venv" ] && [ -n "$previous" ] && git diff --quiet "$previous" "$revision" -- "${paths[@]}" && systemctl is-active --quiet "tally-$service"; then
     exit 0
 fi
 requirements="ai-services/$service-server/requirements.txt"
