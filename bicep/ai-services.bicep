@@ -11,6 +11,8 @@ param containerDomain string
 @secure()
 @minLength(32)
 param multiAgentToken string
+@description('Source allowed to reach the AI service ports (5010, 5003, 8000). Release 2 B5: a Consumption Container Apps environment has no fixed egress IP, so the ports are pinned to Azure Australia East rather than left open to the internet. The bearer token is the second layer.')
+param serviceSourceAddressPrefix string = 'AzureCloud.australiaeast'
 var services = [
   { name: 'mcp', port: 8000 }
   { name: 'rag', port: 5003 }
@@ -23,6 +25,7 @@ module host 'modules/python-service-vm.bicep' = {
     vmName: 'vm-tally-ai'
     dnsLabel: 'tally-ai'
     services: services
+    serviceSourceAddressPrefix: serviceSourceAddressPrefix
     serviceEnvironment: join([
       'OLLAMA_URL=http://tally-ollama.${location}.cloudapp.azure.com:11434'
       'TRANSACTIONS_DB_URL=https://transactions-db.${containerDomain}'

@@ -18,5 +18,10 @@ param multiAgentToken = readEnvironmentVariable('MULTI_AGENT_TOKEN')
 // Bearer token bills-db requires on every route but /health.
 param billsDbToken = readEnvironmentVariable('BILLS_DB_TOKEN')
 
-// Empty until an allowlist is tested against the live deployment; any entry denies the rest.
+// Stays empty on purpose. Tested 22 Oct 2026 against bills-db: an allowlist of
+// the AI VM's public IP also blocks backend-to-db calls inside the environment
+// ("Access denied by IP access control policy"), because inter-app traffic
+// reaches the same Envoy ingress and does not arrive from that IP. These three
+// DBs need app-layer bearer auth instead, which bills-db already has via
+// BILLS_DB_TOKEN. Only populate this for an app with no in-environment callers.
 param dbAllowedSourceIps = []
