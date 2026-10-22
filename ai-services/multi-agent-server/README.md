@@ -52,6 +52,16 @@ Invoke-RestMethod http://127.0.0.1:5010/health -Headers @{ Authorization = 'Bear
 configured model tags are available. `export_mode: "on_demand"` means JSONL
 evidence is generated only when requested, not rewritten during state changes.
 
+## Background workflows
+
+For clients behind an HTTP ingress timeout, submit the usual workflow JSON to
+`POST /workflow/jobs`. It returns HTTP 202 with a `job_id` before the models run.
+Poll `GET /workflow/jobs/<job_id>` every five seconds until `workflow_state` is
+no longer `running`. Model work continues after the submission connection closes;
+polling only reads the saved result. Existing `POST /workflow` remains synchronous.
+See the [HTTP contract](../../docs/release-2/shared/multi-agent-server-contract.md)
+for failure, capacity and restart behavior.
+
 ## Configure container-to-host access
 
 Feature backends use `http://host.docker.internal:5010`. The default

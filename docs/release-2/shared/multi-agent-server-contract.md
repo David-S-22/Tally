@@ -27,6 +27,8 @@ authorization claims. All callers with the token can access all workflows.
 | --- | --- |
 | `GET /health` | 200 process liveness, `ready`, Ollama status, configured and missing models, contract version, `export_mode: "on_demand"` |
 | `POST /workflow` | 200 completed stage sequence or plan-only; 503 saved failed sequence or busy/provider failure |
+| `POST /workflow/jobs` | 202 with `job_id`; runs a new workflow in the background (no `reuse_plan`) |
+| `GET /workflow/jobs/<id>` | 200 saved workflow record; poll every five seconds until `workflow_state` is no longer `running` |
 | `GET /workflow/<id>` | 200 full persisted record, or 404 |
 | `POST /workflow/<id>/decision` | 200 recorded decision, 400 invalid decision, 409 invalid transition |
 | `GET /workflow/status?feature=<feature>` | 200 counts, latest record and export mode; optional validated feature filter |

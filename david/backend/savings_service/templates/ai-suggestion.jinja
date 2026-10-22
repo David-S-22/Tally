@@ -1,8 +1,8 @@
-<div class="dashboard-panel ai-suggestion-panel" id="ai-suggestion-container" {% if loading %}hx-get="/savings-backend/ai-suggestion" hx-trigger="load" hx-target="#ai-suggestion-container" hx-swap="outerHTML" {% endif %}>
+<div class="dashboard-panel ai-suggestion-panel" id="ai-suggestion-container" {% if job_id %}hx-get="/savings-backend/ai-suggestion/jobs/{{ job_id }}" hx-trigger="every 5s" hx-target="#ai-suggestion-container" hx-swap="outerHTML" aria-busy="true"{% elif loading %}hx-post="/savings-backend/ai-suggestion/jobs" hx-trigger="load" hx-target="#ai-suggestion-container" hx-swap="outerHTML"{% endif %}>
     <div class="panel-header">
         <h2>AI Suggestion</h2>
-        <button type="button" class="btn-refresh" 
-                hx-get="/savings-backend/ai-suggestion" 
+        <button type="button" class="btn-refresh" {% if loading %}disabled{% endif %}
+                hx-post="/savings-backend/ai-suggestion/jobs"
                 hx-include="[name='suggestion']" 
                 hx-target="#ai-suggestion-container" 
                 hx-indicator="#ai-suggestion-container" 

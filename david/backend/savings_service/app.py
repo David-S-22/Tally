@@ -246,6 +246,61 @@ def setup_app(db_url: str, transactions_db_url: str) -> Flask:
             reviewer=reviewer,
         ), 200
 
+    @app.post("/ai-suggestion/jobs")
+    def submit_ai_suggestion_job():
+        payload = request.get_json(silent=True) or request.form.to_dict()
+        result = generate_savings_advice(
+            db_url, tx_url=tx_url, previous_suggestion=payload.get("suggestion"),
+            background=True,
+        )
+        if isinstance(result, dict):
+            from uuid import UUID
+            job_id = UUID(result["job_id"])
+            return make_response(render_template(
+                "ai-suggestion.jinja", job_id=job_id, loading=True,
+            ), 200, {"Cache-Control": "no-store"})
+        suggestion, sources, confidence, reviewer = result
+        return make_response(render_template(
+            "ai-suggestion.jinja", suggestion=suggestion, sources=sources,
+            confidence=confidence, reviewer=reviewer,
+        ), 200, {"Cache-Control": "no-store"})
+
+    @app.get("/ai-suggestion/jobs/<uuid:job_id>")
+    def poll_ai_suggestion_job(job_id):
+        try:
+            url = os.environ.get("MULTI_AGENT_URL", "http://localhost:5010").rstrip("/")
+            token = os.environ.get("MULTI_AGENT_TOKEN", "")
+            response = requests.get(
+                f"{url}/workflow/jobs/{job_id}",
+                headers={"Authorization": f"Bearer {token}"} if token else {}, timeout=15,
+            )
+            response.raise_for_status()
+            workflow = response.json()
+            if workflow.get("feature") != "savings":
+                raise ValueError("This job does not contain savings advice.")
+            if workflow["workflow_state"] == "running":
+                return make_response(render_template(
+                    "ai-suggestion.jinja", job_id=job_id, loading=True,
+                ), 200, {"Cache-Control": "no-store"})
+            worker = workflow.get("worker_result") or {}
+            if worker.get("status") != "success":
+                raise ValueError(workflow.get("error") or "Savings advice failed. Please try again.")
+            advice = worker.get("output")
+            confidence = worker.get("confidence")
+            if not isinstance(advice, str) or confidence not in ("High", "Medium", "Low"):
+                raise ValueError("The advice service returned an invalid result.")
+            return make_response(render_template(
+                "ai-suggestion.jinja", suggestion=" ".join(advice.splitlines()),
+                sources=(workflow.get("context") or {}).get("savings_sources"),
+                confidence=confidence, reviewer=workflow.get("reviewer_result"),
+            ), 200, {"Cache-Control": "no-store"})
+        except Exception:
+            app.logger.exception("Savings advice job poll failed")
+            return make_response(render_template(
+                "ai-suggestion.jinja",
+                suggestion="Error: Unable to retrieve savings advice. Please try again shortly.",
+            ), 200, {"Cache-Control": "no-store"})
+
     @app.route("/ai-suggestion/action", methods=["POST"])
     def action_ai_suggestion():
         payload = request.get_json(silent=True) or request.form.to_dict()
