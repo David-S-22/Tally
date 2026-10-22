@@ -1,6 +1,7 @@
 import re
 import threading
 import time
+from typing import Any
 
 import pytest
 from datetime import datetime
@@ -715,7 +716,7 @@ def test_multi_agent_client_forwards_backend_token_and_long_timeout(
     monkeypatch.setenv("MULTI_AGENT_SERVER_URL", "http://multi-agent")
     monkeypatch.setenv("MULTI_AGENT_TOKEN", "test-token")
     monkeypatch.setenv("MULTI_AGENT_TIMEOUT_SECONDS", "600")
-    captured = {}
+    captured: dict[str, Any] = {}
 
     def post(url, **kwargs):
         captured.update(url=url, **kwargs)
@@ -794,7 +795,7 @@ def test_multi_agent_decision_is_recorded_before_local_confirmation(
                 workflow_id="workflow-123",
             )
         )
-    captured = {}
+    captured: dict[str, Any] = {}
 
     def record_decision(workflow_id, body):
         captured.update(workflow_id=workflow_id, **body)

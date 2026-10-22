@@ -109,8 +109,11 @@ def test_create_anomaly_persists_workflow_id(client: FlaskClient):
     )
 
     assert resp.status_code == 201
-    assert resp.json["workflow_id"] == "workflow-123"
-    fetched = client.get(f"/anomalies/{resp.json['id']}")
+    assert isinstance(resp.json, dict)
+    created = resp.json
+    assert created["workflow_id"] == "workflow-123"
+    fetched = client.get(f"/anomalies/{created['id']}")
+    assert isinstance(fetched.json, dict)
     assert fetched.json["workflow_id"] == "workflow-123"
 
 
