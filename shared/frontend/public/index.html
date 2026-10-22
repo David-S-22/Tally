@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Tally — Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/tally-icon.svg">
     <link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/alert.css">
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js"
@@ -15,7 +16,7 @@
 </head>
 <body>
     <header class="app-header">
-        <div class="brand"><span class="logo">◆</span> Tally</div>
+        <div class="brand"><img class="logo" src="/tally-icon.svg" alt="" aria-hidden="true"> Tally</div>
         <nav class="navbar" id="navbar">
             <button type="button" class="nav-tab active" data-page="home"
                     hx-get="/home.html" hx-target="#content" hx-swap="innerHTML">
