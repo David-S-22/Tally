@@ -94,8 +94,22 @@ def create_app(log_dir=None, settings=None, agent_runner=None):
             models=settings.models,
             mcp="not_used",
             export_mode="on_demand",
+            single_workflow_gate=coordinator.gate_enabled,
             **provider,
         )
+
+    @app.get("/admin/gate")
+    def get_gate():
+        return jsonify(single_workflow_gate=coordinator.gate_enabled)
+
+    @app.put("/admin/gate")
+    def set_gate():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or not isinstance(body.get("enabled"), bool):
+            raise WorkflowError(400, "enabled must be a boolean", "invalid_request")
+        coordinator.gate_enabled = body["enabled"]
+        logger.info("single_workflow_gate=%s", body["enabled"])
+        return jsonify(single_workflow_gate=coordinator.gate_enabled)
 
     @app.post("/workflow")
     def workflow():
