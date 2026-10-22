@@ -226,13 +226,13 @@
         } catch (e) {}
         showError('Request failed (' + status + '): ' + (msg || 'Invalid request or server error'));
         const refreshBtn = document.querySelector('#ai-suggestion-container .btn-refresh');
-        if (refreshBtn) refreshBtn.disabled = false;
+        if (refreshBtn && !refreshBtn.closest('[aria-busy="true"]')) refreshBtn.disabled = false;
       });
 
       document.addEventListener('htmx:sendError', function() {
         showError('Network error: Unable to communicate with the server.');
         const refreshBtn = document.querySelector('#ai-suggestion-container .btn-refresh');
-        if (refreshBtn) refreshBtn.disabled = false;
+        if (refreshBtn && !refreshBtn.closest('[aria-busy="true"]')) refreshBtn.disabled = false;
       });
     </script>
   </body>

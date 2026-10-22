@@ -554,12 +554,16 @@ button.btn-refresh:hover,
 }
 
 #ai-suggestion-container.htmx-request,
-#ai-suggestion-container.htmx-request * {
+#ai-suggestion-container.htmx-request *,
+#ai-suggestion-container[aria-busy="true"],
+#ai-suggestion-container[aria-busy="true"] * {
   cursor: wait !important;
 }
 
 #ai-suggestion-container.htmx-request button,
-#ai-suggestion-container.htmx-request textarea {
+#ai-suggestion-container.htmx-request textarea,
+#ai-suggestion-container[aria-busy="true"] button,
+#ai-suggestion-container[aria-busy="true"] textarea {
   opacity: 0.5;
   pointer-events: none;
 }
