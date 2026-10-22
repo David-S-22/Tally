@@ -85,7 +85,7 @@ TRANSACTIONS = {
 
 
 def _transactions_url() -> str:
-    return (config.TRANSACTIONS_DB_URL or config.TRANSACTIONS_API_URL) + "/transactions"
+    return config.TRANSACTIONS_API_URL + "/transactions"
 
 
 def _request(method: str, **kwargs):
