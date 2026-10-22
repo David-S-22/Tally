@@ -24,6 +24,38 @@ PROPOSAL_FORMAT = (
 )
 
 
+RISK_BASES = (
+    "within_thresholds",
+    "projected_over_warning",
+    "actual_over_warning",
+    "projected_over_cap",
+    "actual_over_cap",
+)
+
+
+def _risk(line: dict) -> tuple[int, int, int]:
+    from . import chat_service
+
+    actual = line.get("actual_spend") if isinstance(line.get("actual_spend"), int) else 0
+    projected = max(chat_service._line_projected_high(line), actual)
+    cap = line.get("hard_cap") if isinstance(line.get("hard_cap"), int) and line.get("hard_cap") > 0 else None
+    warn = line.get("warn_at") if isinstance(line.get("warn_at"), int) and line.get("warn_at") > 0 else None
+    if cap is not None and actual >= cap:
+        return 4, int(actual / cap * 1000), actual - cap
+    if cap is not None and projected >= cap:
+        return 3, int(projected / cap * 1000), projected - cap
+    if warn is not None and actual >= warn:
+        return 2, int(actual / warn * 1000), actual - warn
+    if warn is not None and projected >= warn:
+        return 1, int(projected / warn * 1000), projected - warn
+    reference = cap if cap is not None else warn
+    return 0, int(projected / reference * 1000) if reference else 0, 0
+
+
+def _rank_by_risk(lines: list[dict]) -> list[dict]:
+    return sorted(lines, key=_risk, reverse=True)
+
+
 def _line_evidence(line: dict) -> dict:
     from . import chat_service
 
@@ -36,6 +68,7 @@ def _line_evidence(line: dict) -> dict:
         "warn_at_cents": fact["warn_at_cents"],
         "hard_cap_cents": fact["hard_cap_cents"],
         "threshold_state": fact["threshold_state"],
+        "risk_basis": RISK_BASES[_risk(line)[0]],
     }
 
 
@@ -43,7 +76,7 @@ def _summary_evidence(summary: dict) -> dict:
     from . import chat_service
 
     lines = chat_service._budget_lines(summary)
-    ranked = sorted(lines, key=chat_service._line_pressure_score, reverse=True)[:MAX_EVIDENCE_LINES]
+    ranked = _rank_by_risk(lines)[:MAX_EVIDENCE_LINES]
     budget = summary.get("budget") if isinstance(summary.get("budget"), dict) else {}
     totals = summary.get("totals") if isinstance(summary.get("totals"), dict) else {}
     data = {
@@ -55,7 +88,11 @@ def _summary_evidence(summary: dict) -> dict:
     }
     return {
         "source": "budgets:summary",
-        "summary": f"Budget summary for {budget.get('month')} with the {len(ranked)} budget lines under most pressure. Amounts are whole cents.",
+        "summary": (
+            f"Budget summary for {budget.get('month')} with the {len(ranked)} highest-risk budget lines, "
+            "highest risk first (already over cap on actual spend, then projected over cap, then over warning). "
+            "Amounts are whole cents."
+        ),
         "data": data,
     }
 
@@ -87,7 +124,7 @@ def _mcp_evidence(summary: dict, message: str, context: dict) -> tuple[dict | No
 def _rag_query(summary: dict, mcp_evidence: dict | None) -> str:
     from . import chat_service
 
-    top_lines = chat_service._top_pressure_lines(summary, limit=1)
+    top_lines = _rank_by_risk(chat_service._budget_lines(summary))[:1]
     category = top_lines[0].get("category") if top_lines else None
     merchants: list[str] = []
     if mcp_evidence is not None:
@@ -132,7 +169,7 @@ def _rag_evidence(summary: dict, mcp_evidence: dict | None) -> tuple[list[dict],
 def _target_line(summary: dict) -> dict | None:
     from . import chat_service
 
-    top_lines = chat_service._top_pressure_lines(summary, limit=1)
+    top_lines = _rank_by_risk(chat_service._budget_lines(summary))[:1]
     return _line_evidence(top_lines[0]) if top_lines else None
 
 
@@ -140,7 +177,9 @@ def _task(summary: dict, rag_evidence: list[dict], message: str | None) -> str:
     guidance = "; ".join(f"{item['source']} ({item['data']['label']})" for item in rag_evidence)
     target = _target_line(summary)
     parts = [
-        "Review this budget month and recommend one threshold change for the budget line under most pressure.",
+        "Review this budget month and recommend one threshold change for the highest-risk budget line. "
+        "Risk order: lines already over their hard cap on actual spend come first, then lines projected over the cap "
+        "because of planned events, then lines over their warning threshold.",
         "Use only supplied evidence. Transaction facts come from budgets:transactions and current thresholds from budgets:summary.",
         f"Base the recommendation on the retrieved guidance: {guidance}." if guidance else
         "No retrieved guidance is available; state that as a limitation.",
@@ -148,12 +187,14 @@ def _task(summary: dict, rag_evidence: list[dict], message: str | None) -> str:
     if target:
         parts.append(
             f"Target line: budget_line_id {target['budget_line_id']} ({target['category']}), "
+            f"risk {target['risk_basis']}, actual spend so far {target['actual_spend_cents']} cents, "
             f"projected spend {target['projected_spend_cents']} cents, current warn_at {target['warn_at_cents']} cents, "
             f"current hard_cap {target['hard_cap_cents']} cents. All amounts are whole cents."
         )
         parts.append(
-            "Choose a new hard_cap that is at least the projected spend when the line is over its cap, "
-            "and a warn_at lower than the new hard_cap. Never propose a threshold far below current spend."
+            "Choose a new hard_cap that is at least the projected spend when the line is over its cap "
+            "(and never below actual spend already incurred), and a warn_at lower than the new hard_cap. "
+            "Never propose a threshold far below current spend."
         )
     parts.extend(
         [

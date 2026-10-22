@@ -168,6 +168,23 @@ def test_task_names_target_line_and_validator_rejects_implausible_cap(enabled):
     task = service._task(SUMMARY, [], None)
     assert "budget_line_id 7 (Dining)" in task and "30000 cents" in task
 
+
+def test_ranking_puts_actual_over_cap_before_projected_over_cap(enabled):
+    from backend import multi_agent_service as service
+
+    lines = [
+        {"id": 1, "category": "Planned", "actual_spend": 1000, "planned_est_high_total": 90000, "projected_high_total": 91000, "warn_at": 20000, "hard_cap": 30000},
+        {"id": 2, "category": "AlreadyOver", "actual_spend": 31000, "planned_est_high_total": 0, "projected_high_total": 31000, "warn_at": 20000, "hard_cap": 30000},
+        {"id": 3, "category": "Fine", "actual_spend": 1000, "planned_est_high_total": 0, "projected_high_total": 1000, "warn_at": 20000, "hard_cap": 30000},
+    ]
+
+    ranked = service._rank_by_risk(lines)
+
+    assert [line["id"] for line in ranked] == [2, 1, 3]
+    assert service._line_evidence(ranked[0])["risk_basis"] == "actual_over_cap"
+    assert service._line_evidence(ranked[1])["risk_basis"] == "projected_over_cap"
+    assert "risk actual_over_cap" in service._task({**SUMMARY, "budget_lines": lines}, [], None)
+
     implausible = {**PROPOSAL, "operations": [
         {"action": "update_budget_line", "budget_line_id": 7, "fields": {"warn_at": 1500, "hard_cap": 2500}}
     ]}
