@@ -229,6 +229,9 @@ services:
       RAG_SERVER_URL: http://host.docker.internal:5003
       RAG_FEATURE: budgets
       RAG_TOP_K: 3
+      MULTI_AGENT_ENABLED: ${MULTI_AGENT_ENABLED:-false}
+      MULTI_AGENT_URL: ${MULTI_AGENT_URL:-http://host.docker.internal:5010}
+      MULTI_AGENT_TOKEN: ${MULTI_AGENT_TOKEN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

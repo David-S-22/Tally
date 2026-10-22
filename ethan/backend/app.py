@@ -3,7 +3,7 @@ from __future__ import annotations
 import requests
 from flask import Flask, jsonify, request
 
-from . import chat_service, config, db_api, proposal_service, summary_service, transactions_api
+from . import chat_service, config, db_api, multi_agent_service, proposal_service, summary_service, transactions_api
 from .db_api import ServiceError
 
 
@@ -122,6 +122,7 @@ def create_app() -> Flask:
                 "ollama": _ollama_status(),
                 "mcp_mode": "enabled" if config.MCP_ENABLED else "disabled",
                 "rag_mode": "enabled" if config.RAG_ENABLED else "disabled",
+                "multi_agent_mode": "enabled" if config.MULTI_AGENT_ENABLED else "disabled",
             }
         )
 
@@ -255,6 +256,28 @@ def create_app() -> Flask:
             if isinstance(message_payload, dict):
                 db_api.create_chat_message(budget_id_text, message_payload)
         return jsonify(result)
+
+    @application.post("/api/budgets/<int:budget_id>/multi-agent/workflows")
+    def start_multi_agent_workflow(budget_id: int):
+        payload = request.get_json(silent=True)
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, dict):
+            raise ServiceError("request body must be a JSON object", 400, "invalid_json")
+        db_api.get_budget(str(budget_id))
+        return jsonify(multi_agent_service.start(budget_id, payload.get("message"), payload.get("context")))
+
+    @application.get("/api/multi-agent/workflows/<workflow_id>")
+    def get_multi_agent_workflow(workflow_id: str):
+        return jsonify(multi_agent_service.get(workflow_id))
+
+    @application.get("/api/multi-agent/workflows/<workflow_id>/export")
+    def export_multi_agent_workflow(workflow_id: str):
+        return jsonify(multi_agent_service.export(workflow_id))
+
+    @application.post("/api/multi-agent/workflows/<workflow_id>/decision")
+    def decide_multi_agent_workflow(workflow_id: str):
+        return jsonify(multi_agent_service.decide(workflow_id, request.get_json(silent=True)))
 
     @application.get("/api/budgets/<budget_id>/coach-proposals")
     def list_coach_proposals(budget_id: str):
