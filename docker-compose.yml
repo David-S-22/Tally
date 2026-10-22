@@ -72,6 +72,7 @@ services:
       AGENT_LOG_ENABLED: "true"
       AGENT_REQUEST_TTL_SECONDS: 900
       AI_TIMEOUT_SECONDS: 90
+      AI_MODE_ENABLED: ${AI_MODE_ENABLED:-true}
       MCP_ENABLED: ${MCP_ENABLED:-true}
       RAG_ENABLED: ${RAG_ENABLED:-true}
       MULTI_AGENT_ENABLED: ${MULTI_AGENT_ENABLED:-true}
@@ -121,6 +122,7 @@ services:
       FRONTEND_ORIGIN: http://localhost:3005
       OLLAMA_URL: http://ollama:11434
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      AI_MODE_ENABLED: ${AI_MODE_ENABLED:-true}
       MCP_ENABLED: ${MCP_ENABLED:-true}
       MCP_SERVER_URL: http://host.docker.internal:8000/mcp
       RAG_ENABLED: ${RAG_ENABLED:-true}
@@ -168,6 +170,7 @@ services:
       OLLAMA_URL: http://ollama:11434/v1
       OLLAMA_MODEL: llama3.1:8b
       OLLAMA_LOG_LEVEL: DEBUG
+      AI_MODE_ENABLED: ${AI_MODE_ENABLED:-true}
       MCP_SERVER_URL: http://host.docker.internal:8000/mcp
       RAG_ENABLED: ${RAG_ENABLED:-true}
       RAG_SERVER_URL: http://host.docker.internal:5003
@@ -228,6 +231,7 @@ services:
       OLLAMA_URL: http://ollama:11434
       CHAT_MODEL: qwen2.5:3b
       AI_TIMEOUT_SECONDS: 90
+      AI_MODE_ENABLED: ${AI_MODE_ENABLED:-true}
       MCP_ENABLED: ${MCP_ENABLED:-true}
       MCP_SERVER_URL: http://host.docker.internal:8000/mcp
       MCP_TIMEOUT_SECONDS: 15
@@ -289,6 +293,7 @@ services:
       MULTI_AGENT_TOKEN: ${MULTI_AGENT_TOKEN:-}
       MULTI_AGENT_TIMEOUT: ${MULTI_AGENT_TIMEOUT:-1800}
       MCP_SERVER_URL: http://host.docker.internal:8000/mcp
+      AI_MODE_ENABLED: ${AI_MODE_ENABLED:-true}
       MCP_ENABLED: ${MCP_ENABLED:-true}
       RAG_ENABLED: ${RAG_ENABLED:-true}
     depends_on:

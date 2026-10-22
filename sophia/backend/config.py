@@ -40,6 +40,9 @@ def _rag_thresholds(env):
     return RAG_DEFAULT_THRESHOLDS
 
 
+# AI mode (direct Ollama calls); off unless switched on, like MCP/RAG/Multi-Agent below.
+AI_MODE_ENABLED = _flag("AI_MODE_ENABLED", False)
+
 MCP_ENABLED = _flag("MCP_ENABLED", False)
 MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://host.docker.internal:8000/mcp").rstrip("/")
 MCP_TIMEOUT_SECONDS = float(os.environ.get("MCP_TIMEOUT_SECONDS", "15"))

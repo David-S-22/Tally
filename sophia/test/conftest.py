@@ -109,6 +109,14 @@ def live_client(live_db_base_url, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def ai_mode_on(monkeypatch):
+    """AI mode is off by default in config so the cloud baseline refuses; the suite drives the AI paths behind a fake model, so turn it on unless a test patches it off."""
+    from sophia.backend import config
+
+    monkeypatch.setattr(config, "AI_MODE_ENABLED", True)
+
+
+@pytest.fixture(autouse=True)
 def no_real_model_warm_up(monkeypatch):
     """Tests never reach a real Ollama: the draft-model warm-up is a no-op unless a test replaces it."""
     from sophia.backend.ai import ollama_client

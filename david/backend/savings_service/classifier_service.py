@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 from shared.backend import dto
-from .ollama_service import classifier_model, get_ai_structured_json, load_prompt
+from .ollama_service import ai_mode_enabled, classifier_model, get_ai_structured_json, load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +13,10 @@ def classify_feedback(feedback_text: str, categories: List[dto.Category]) -> tup
     or (None, None) if it is general feedback or a constraint.
     """
     if not feedback_text or not feedback_text.strip() or not categories:
+        return None, None
+
+    # AI mode off: feedback is still saved, it just carries no inferred focus.
+    if not ai_mode_enabled():
         return None, None
 
     category_names = [category.name for category in categories]

@@ -54,6 +54,9 @@ param backendMemory string = '1.0Gi'
 @description('Image tag to deploy for application containers')
 param imageTag string = 'latest'
 
+@description('Enable AI mode (direct Ollama model calls) in backend services')
+param enableAi bool = false
+
 @description('Enable Model Context Protocol (MCP) integrations in backend services')
 param enableMcp bool = true
 
@@ -301,6 +304,7 @@ module modTransactionsBackend 'modules/container-app.bicep' = {
       { name: 'AGENT_LOG_ENABLED', value: 'true' }
       { name: 'AGENT_REQUEST_TTL_SECONDS', value: '900' }
       { name: 'AI_TIMEOUT_SECONDS', value: '90' }
+      { name: 'AI_MODE_ENABLED', value: enableAi ? 'true' : 'false' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
       { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
     ]
@@ -336,6 +340,7 @@ module modBillsBackend 'modules/container-app.bicep' = {
       { name: 'FRONTEND_ORIGIN', value: 'https://shared-frontend.${envDomain}' }
       { name: 'OLLAMA_URL', value: ollamaUrl }
       { name: 'OLLAMA_KEEP_ALIVE', value: '30m' }
+      { name: 'AI_MODE_ENABLED', value: enableAi ? 'true' : 'false' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
       { name: 'MCP_SERVER_URL', value: mcpUrl }
       { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
@@ -373,6 +378,7 @@ module modAnomaliesBackend 'modules/container-app.bicep' = {
       { name: 'OLLAMA_URL', value: '${ollamaUrl}/v1' }
       { name: 'OLLAMA_MODEL', value: 'llama3.1:8b' }
       { name: 'OLLAMA_LOG_LEVEL', value: 'DEBUG' }
+      { name: 'AI_MODE_ENABLED', value: enableAi ? 'true' : 'false' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
       { name: 'MCP_SERVER_URL', value: mcpUrl }
       { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }
@@ -414,6 +420,7 @@ module modBudgetsBackend 'modules/container-app.bicep' = {
       { name: 'OLLAMA_URL', value: ollamaUrl }
       { name: 'CHAT_MODEL', value: 'qwen2.5:3b' }
       { name: 'AI_TIMEOUT_SECONDS', value: '90' }
+      { name: 'AI_MODE_ENABLED', value: enableAi ? 'true' : 'false' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
       { name: 'MCP_SERVER_URL', value: mcpUrl }
       { name: 'MCP_TIMEOUT_SECONDS', value: '15' }
@@ -456,6 +463,7 @@ module modSavingsBackend 'modules/container-app.bicep' = {
       { name: 'OLLAMA_URL', value: '${ollamaUrl}/v1' }
       { name: 'OLLAMA_MODEL', value: 'llama3.1:8b' }
       { name: 'OLLAMA_CLASSIFIER_MODEL', value: 'qwen2.5:3b' }
+      { name: 'AI_MODE_ENABLED', value: enableAi ? 'true' : 'false' }
       { name: 'MCP_ENABLED', value: enableMcp ? 'true' : 'false' }
       { name: 'MCP_SERVER_URL', value: mcpUrl }
       { name: 'RAG_ENABLED', value: enableRag ? 'true' : 'false' }

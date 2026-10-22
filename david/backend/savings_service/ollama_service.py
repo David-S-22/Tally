@@ -29,6 +29,16 @@ classifier_model = os.environ.get("OLLAMA_CLASSIFIER_MODEL", "qwen2.5:3b")
 client = OpenAI(base_url=OLLAMA_API_URL, api_key="ollama", timeout=OLLAMA_TIMEOUT)
 
 
+def ai_mode_enabled() -> bool:
+    """Whether AI mode is on; off unless switched on, so the cloud baseline makes no model calls.
+
+    Read per call rather than bound at import, so the environment is the only
+    source of truth and tests can set it without patching this module. Callers
+    check this before reaching for a model; nothing here raises to signal it.
+    """
+    return _environment_flag("AI_MODE_ENABLED", False)
+
+
 def load_prompt(prompt_name: str) -> str:
     """Loads a prompt template file from the prompts directory."""
     filename = prompt_name if prompt_name.endswith(".txt") else f"{prompt_name}.txt"

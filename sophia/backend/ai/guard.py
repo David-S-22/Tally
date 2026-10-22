@@ -1,7 +1,9 @@
 """Wraps an Ollama call with validation, one retry, and a safe fallback."""
 import json
 
+from sophia.backend import config
 from sophia.backend.ai.ollama_client import chat
+from sophia.backend.services.errors import ModeError
 
 
 def run(model, prompt_builder, validator, fallback, timeout=None, temperature=None):
@@ -11,8 +13,12 @@ def run(model, prompt_builder, validator, fallback, timeout=None, temperature=No
     first attempt and the previous failure's message on the retry. Returns the
     validated response dict with fallback=False, or a copy of fallback with
     fallback=True if both attempts fail. temperature is passed to chat only
-    when it is not None.
+    when it is not None. Raises ModeError("ai_disabled") before any attempt
+    when AI mode is off, so a disabled deployment refuses rather than falling
+    back to canned text.
     """
+    if not config.AI_MODE_ENABLED:
+        raise ModeError("ai_disabled")
     chat_kwargs = {"timeout": timeout}
     if temperature is not None:
         chat_kwargs["temperature"] = temperature

@@ -9,6 +9,7 @@ from .ollama_service import (
     MCP_ENABLED,
     MULTI_AGENT_ENABLED,
     RAG_ENABLED,
+    ai_mode_enabled,
     call_ai_to_select_tool,
     execute_mcp_tool,
     fetch_mcp_tools,
@@ -494,12 +495,17 @@ def generate_advice(
     return advice_paragraph, sources_str, confidence_category, reviewer
 
 
+AI_DISABLED_MESSAGE = "AI mode is turned off, so savings advice isn't available right now."
+
+
 def generate_savings_advice(
     db_url: str,
     tx_url: str | None = None,
     previous_suggestion: str | None = None,
 ) -> tuple[str, str | None, str | None, dict[str, Any] | None]:
     """Top-level entry point to fetch data and generate personalized savings advice."""
+    if not ai_mode_enabled():
+        return AI_DISABLED_MESSAGE, None, None, None
     try:
         goals = fetch_goals(db_url, active_only=True, top=3)
         if not goals:

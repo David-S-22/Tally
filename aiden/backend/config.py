@@ -74,6 +74,18 @@ class _Config:
         return _resolve("TRANSACTIONS_DB_URL", _url)
 
     @property
+    def AI_MODE_ENABLED(self) -> bool:
+        """AI mode (direct Ollama calls).
+
+        Unlike the other settings this one is optional and absent means off,
+        so a deployment that configures nothing refuses model calls rather
+        than reaching for whatever ``OLLAMA_URL`` happens to point at. It is
+        therefore not listed in :meth:`check_all`.
+        """
+        raw = os.environ.get("AI_MODE_ENABLED")
+        return False if raw is None else _bool(raw)
+
+    @property
     def OLLAMA_URL(self) -> str:
         return _resolve("OLLAMA_URL", _url)
 
