@@ -7,7 +7,7 @@ up front.
 """
 import os
 import math
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 
 def _url(value: str) -> str:
@@ -27,6 +27,13 @@ def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed < 1:
         raise ValueError(f"expected a positive integer but got {value!r}")
+    return parsed
+
+
+def _positive_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise ValueError(f"expected a positive finite number but got {value!r}")
     return parsed
 
 
@@ -90,6 +97,15 @@ class _Config:
         return float(os.environ.get("MCP_TIMEOUT_SECONDS", "15"))
 
     @property
+    def SERVICE_TIMEOUT_SECONDS(self) -> Optional[float]:
+        value = os.environ.get("SERVICE_TIMEOUT_SECONDS")
+        return _positive_float(value) if value is not None else None
+
+    @property
+    def OLLAMA_TIMEOUT_SECONDS(self) -> float:
+        return _positive_float(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "180"))
+
+    @property
     def RAG_ENABLED(self) -> bool:
         return _resolve("RAG_ENABLED", _bool)
 
@@ -148,10 +164,13 @@ class _Config:
             "RAG_FEATURE",
             "RAG_TOP_K",
             "RAG_TIMEOUT_SECONDS",
+            "MCP_TIMEOUT_SECONDS",
+            "SERVICE_TIMEOUT_SECONDS",
+            "OLLAMA_TIMEOUT_SECONDS",
         ):
             try:
                 getattr(self, name)
-            except RuntimeError as exc:
+            except (RuntimeError, ValueError) as exc:
                 errors.append(str(exc))
 
         try:
