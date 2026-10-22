@@ -132,7 +132,25 @@
         .budget-actions {
             display: flex;
             justify-content: flex-end;
+            gap: 0.75rem;
             padding: 10px 18px 0;
+        }
+
+        .seed-demo-options {
+            display: grid;
+            gap: 0.75rem;
+        }
+
+        .seed-demo-option {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            cursor: pointer;
+        }
+
+        .seed-demo-confirm {
+            margin: 0;
+            font-weight: 600;
         }
 
         .budget-line-form {
@@ -918,10 +936,39 @@
                 <div id="budget-summary-strip" class="budget-summary-strip hidden"></div>
 
                 <div class="budget-actions">
+                    <button id="show-seed-demo-data-button" type="button">
+                        Seed demo data
+                    </button>
                     <button id="show-add-budget-line-button" type="button">
                         Add budget line
                     </button>
                 </div>
+
+                <dialog id="seed-demo-dialog" class="budget-line-dialog">
+                    <div class="budget-line-dialog-header">
+                        <h3>Seed demo data</h3>
+                        <p id="seed-demo-subtitle">Choose what to reset and seed.</p>
+                    </div>
+                    <form id="seed-demo-form" class="budget-line-form">
+                        <div id="seed-demo-options" class="seed-demo-options">
+                            <label class="seed-demo-option">
+                                <input id="seed-skip-budgets-reset" type="checkbox">
+                                <span>Skip budgets reset (keep existing budgets, lines and events)</span>
+                            </label>
+                            <label class="seed-demo-option">
+                                <input id="seed-skip-transactions" type="checkbox">
+                                <span>Skip transactions (do not add demo transactions)</span>
+                            </label>
+                        </div>
+                        <p id="seed-demo-confirm" class="seed-demo-confirm hidden" role="alert"></p>
+                        <p id="seed-demo-error" class="budget-line-form-error hidden" role="alert"></p>
+                        <div class="budget-line-form-actions">
+                            <button type="button" id="cancel-seed-demo-button">Cancel</button>
+                            <button type="button" id="back-seed-demo-button" class="hidden">Back</button>
+                            <button type="submit" id="submit-seed-demo-button">Continue</button>
+                        </div>
+                    </form>
+                </dialog>
 
                 <dialog id="budget-line-dialog" class="budget-line-dialog">
                     <div class="budget-line-dialog-header">
@@ -2980,6 +3027,89 @@
         });
         document.getElementById('budget-month-display').addEventListener('click', function () {
             openBudgetMonthPicker();
+        });
+        const seedDemoState = { confirming: false, busy: false };
+
+        function setSeedDemoStep(confirming) {
+            seedDemoState.confirming = confirming;
+            const skipReset = document.getElementById('seed-skip-budgets-reset').checked;
+            const skipTransactions = document.getElementById('seed-skip-transactions').checked;
+            const actions = [];
+            if (!skipReset) {
+                actions.push('wipe and re-seed ALL budgets, budget lines, planned events and chat history');
+            }
+            if (!skipTransactions) {
+                actions.push('add any missing demo transactions (Aug-Oct 2026)');
+            }
+            const confirmElement = document.getElementById('seed-demo-confirm');
+            confirmElement.textContent = actions.length
+                ? 'Are you sure? This will ' + actions.join(' and ') + '.'
+                : 'Both options are skipped, so nothing will change.';
+            confirmElement.classList.toggle('hidden', !confirming);
+            document.getElementById('seed-demo-options').classList.toggle('hidden', confirming);
+            document.getElementById('back-seed-demo-button').classList.toggle('hidden', !confirming);
+            document.getElementById('seed-demo-subtitle').textContent = confirming ? 'Please confirm.' : 'Choose what to reset and seed.';
+            const submitButton = document.getElementById('submit-seed-demo-button');
+            submitButton.textContent = confirming ? 'Yes, seed demo data' : 'Continue';
+            submitButton.disabled = confirming && actions.length === 0;
+        }
+
+        function setSeedDemoError(message) {
+            const errorElement = document.getElementById('seed-demo-error');
+            errorElement.textContent = message;
+            errorElement.classList.toggle('hidden', !message);
+        }
+
+        document.getElementById('show-seed-demo-data-button').addEventListener('click', function () {
+            document.getElementById('seed-demo-dialog').showModal();
+        });
+        document.getElementById('cancel-seed-demo-button').addEventListener('click', function () {
+            document.getElementById('seed-demo-dialog').close();
+        });
+        document.getElementById('back-seed-demo-button').addEventListener('click', function () {
+            setSeedDemoStep(false);
+        });
+        document.getElementById('seed-demo-dialog').addEventListener('close', function () {
+            document.getElementById('seed-demo-form').reset();
+            setSeedDemoError('');
+            setSeedDemoStep(false);
+        });
+        document.getElementById('seed-demo-form').addEventListener('submit', async function (event) {
+            event.preventDefault();
+            if (seedDemoState.busy) {
+                return;
+            }
+            if (!seedDemoState.confirming) {
+                setSeedDemoStep(true);
+                return;
+            }
+            const submitButton = document.getElementById('submit-seed-demo-button');
+            seedDemoState.busy = true;
+            submitButton.disabled = true;
+            submitButton.textContent = 'Seeding...';
+            setSeedDemoError('');
+            try {
+                const response = await fetch('/budgets-backend/api/demo-data/seed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        skip_budgets_reset: document.getElementById('seed-skip-budgets-reset').checked,
+                        skip_transactions: document.getElementById('seed-skip-transactions').checked
+                    })
+                });
+                const payload = await response.json().catch(function () { return {}; });
+                if (!response.ok) {
+                    throw new Error(payload.error || 'Unable to seed demo data.');
+                }
+                document.getElementById('seed-demo-dialog').close();
+                await loadBudgetsOverview();
+            } catch (error) {
+                setSeedDemoError(error.message || 'Unable to seed demo data.');
+                submitButton.disabled = false;
+                submitButton.textContent = 'Yes, seed demo data';
+            } finally {
+                seedDemoState.busy = false;
+            }
         });
         document.getElementById('budget-line-dialog').addEventListener('close', function () {
             budgetState.editingLineId = null;

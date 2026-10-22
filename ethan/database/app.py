@@ -774,6 +774,16 @@ def _create_app(db_path: str, seed_demo_data: bool = True) -> Flask:
         db.session.commit()
         return "", 204
 
+    @application.post("/admin/reset")
+    def reset_database():
+        db.session.remove()
+        db.drop_all()
+        db.create_all()
+        if seed_demo_data:
+            seed_database_if_empty()
+        db.session.commit()
+        return jsonify(ok=True)
+
     return application
 
 

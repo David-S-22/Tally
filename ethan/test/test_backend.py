@@ -3231,3 +3231,53 @@ def test_budget_summary_lists_other_expense_categories_without_budget_lines(monk
             {"category_id": 81, "category": "Groceries", "actual_spend": 4000},
         ],
     }
+
+
+def test_seed_demo_data_passes_flags(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "backend.demo_data.seed_demo_data",
+        lambda **flags: calls.append(flags) or {"budgets_reset": False, "transactions": None},
+    )
+
+    resp = _client().post("/api/demo-data/seed", json={"skip_budgets_reset": True})
+
+    assert resp.status_code == 200
+    assert calls == [{"skip_budgets_reset": True, "skip_transactions": False}]
+
+
+def test_seed_demo_data_rejects_non_boolean_flags():
+    resp = _client().post("/api/demo-data/seed", json={"skip_transactions": "yes"})
+
+    assert resp.status_code == 422
+
+
+def test_seed_transactions_skips_existing(monkeypatch):
+    from backend import demo_data
+
+    posted = []
+    existing = [{"date": "Sat, 01 Aug 2026 00:00:00 GMT", "merchant": "Harbourview Realty", "amount": 1100.0}]
+
+    class Response:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    def fake_request(method, url, **kwargs):
+        if method == "POST":
+            posted.append(kwargs["json"])
+            return Response({})
+        return Response(existing)
+
+    monkeypatch.setattr("backend.demo_data.requests.request", fake_request)
+
+    result = demo_data.seed_transactions()
+
+    total = sum(len(rows) for rows in demo_data.TRANSACTIONS.values())
+    assert result == {"created": total - 1, "already_present": 1}
+    assert len(posted) == total - 1

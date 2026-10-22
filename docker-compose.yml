@@ -225,6 +225,7 @@ services:
       FLASK_ENV: production
       PORT: 5006
       BUDGETS_DB_URL: http://budgets-db:6006
+      TRANSACTIONS_DB_URL: http://transactions-db:6001
       OLLAMA_URL: http://ollama:11434
       CHAT_MODEL: qwen2.5:3b
       AI_TIMEOUT_SECONDS: 90
