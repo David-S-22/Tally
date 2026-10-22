@@ -106,6 +106,10 @@ function openReviewModal(button) {
         confidenceMissing.hidden = false;
     }
     document.getElementById('review-decision').value = 'confirm';
+    const reason = document.getElementById('review-reason');
+    reason.value = '';
+    reason.required = Boolean(button.dataset.workflowId);
+    document.getElementById('review-error').hidden = true;
     const modal = document.getElementById('review-modal');
     modal.classList.remove('closing');
     modal.hidden = false;
@@ -134,14 +138,32 @@ async function submitReview() {
     if (reviewAnomalyId === null) return;
 
     const decision = document.getElementById('review-decision').value;
-    const resp = await fetch('/anomalies-backend/anomalies/' + reviewAnomalyId + '/' + decision, {
-        method: 'POST'
-    });
-
-    if (resp.ok) {
-        anomaliesTable.innerHTML = await resp.text();
-        sortAnomalies();
+    const reason = document.getElementById('review-reason').value.trim();
+    const reasonField = document.getElementById('review-reason');
+    if (reasonField.required && !reason) {
+        reasonField.reportValidity();
+        return;
     }
 
-    closeReviewModal();
+    const error = document.getElementById('review-error');
+    error.hidden = true;
+    try {
+        const resp = await fetch('/anomalies-backend/anomalies/' + reviewAnomalyId + '/' + decision, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason })
+        });
+        if (!resp.ok) {
+            const problem = await resp.json().catch(() => null);
+            error.textContent = problem?.error || 'The review could not be recorded. Please try again.';
+            error.hidden = false;
+            return;
+        }
+        anomaliesTable.innerHTML = await resp.text();
+        sortAnomalies();
+        closeReviewModal();
+    } catch {
+        error.textContent = 'The review could not be recorded. Check your connection and try again.';
+        error.hidden = false;
+    }
 }

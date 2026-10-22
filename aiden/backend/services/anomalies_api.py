@@ -25,6 +25,15 @@ def get_anomaly_by_transaction_id(transaction_id: int) -> Optional[dto.Anomaly]:
 
     return deserialise_or_abort(dto.Anomaly, resp.json())
 
+def get_anomaly(id: int) -> Optional[dto.Anomaly]:
+    resp = get(_url(f"/{id}"))
+
+    if resp.status_code == 404:
+        return None
+
+    resp.raise_for_status()
+    return deserialise_or_abort(dto.Anomaly, resp.json())
+
 def create_anomaly(anomaly: dto.Anomaly) -> dto.Anomaly:
     resp = post(_url("/"), json=serialise(anomaly))
     resp.raise_for_status()

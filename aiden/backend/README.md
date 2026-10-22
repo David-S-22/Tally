@@ -20,6 +20,12 @@ at `http://host.docker.internal:8000/mcp`; the MCP server is not containerised.
 It also sets `RAG_SERVER_URL` to the shared, retrieve-only RAG server at
 `http://host.docker.internal:5003` and `RAG_FEATURE` to `anomalies`; RAG can be
 disabled with `RAG_ENABLED=false`. The RAG server is likewise not containerised.
+When `MULTI_AGENT_ENABLED=true`, the worker submits the transaction, reviewed
+examples, and RAG guidance to the shared Multi-Agent Server. The backend sends
+`MULTI_AGENT_TOKEN` only as a server-side bearer token and uses a 600-second
+default request timeout, above the shared server's 540-second workflow
+deadline. The direct Ollama review remains available when this integration is
+disabled.
 
 ## Agentic workflow
 
@@ -34,18 +40,29 @@ disabled with `RAG_ENABLED=false`. The RAG server is likewise not containerised.
    to retrieve reviewed examples, and retrieves fraud/anomaly reference guidance
    for the transaction from the shared RAG server (`services/rag_client.py`).
    Both are embedded into the prompt before classifying the transaction.
-6. The model must return JSON containing `is_suspicious` and `justification`.
-   Invalid responses are retried with increasing temperature, up to four
-   attempts.
+6. With the shared server enabled, the backend submits that evidence as an
+   `anomalies` workflow and validates the Worker's structured
+   `is_suspicious`/`justification` result. Otherwise, it calls Ollama directly,
+   which must return JSON containing those fields.
+   Invalid direct Ollama responses are retried with increasing temperature, up
+   to four attempts.
 7. If the transaction is suspicious, the resulting anomaly is written to the
    anomalies database, including the filenames of the RAG documents used as
-   `sources`. Otherwise, no anomaly is created.
+   `sources` and, for shared-server reviews, its `workflow_id`. Otherwise, no
+   anomaly is created.
 8. The worker marks the transaction as complete. The frontend can poll
    `GET /anomaly-alert?key=<transaction-id>` for a rendered alert fragment.
 
 The agent is instructed to be cautious, avoid claiming fraud as fact, use only
 the supplied transaction information, and incorporate the user's previous
 confirmation or dismissal decisions.
+
+For shared-server anomalies, the review dialog requires a reason. The backend
+records `Accept` or `Reject` against the associated workflow before updating
+the local anomaly status; a server failure leaves the local decision unchanged.
+If workflow creation times out, the backend checks the latest Anomalies workflow
+for the review request's unique evidence source instead of blindly creating a
+second workflow.
 
 ## Plan–Act–Observe–Adapt workflow
 
@@ -66,13 +83,14 @@ agent judges the next transaction.
   shaped by the accumulated human feedback and the reference material. If the
   MCP or RAG server is unavailable the review still proceeds without that input.
 - **Act** — The agent sends the system and user prompts to the model through
-  `ollama_api.prompt`, requesting a JSON finding with `is_suspicious` and
-  `justification`. A valid, suspicious finding is converted to an anomaly DTO —
-  along with the model's mean confidence score derived from token log
-  probabilities and the filenames of the RAG documents used as `sources` — and
-  persisted so it can be shown to the user. (Malformed responses are simply
-  retried with a higher temperature, up to four attempts — a robustness detail,
-  not part of the adaptation loop.)
+  `ollama_api.prompt` when direct mode is enabled, or submits the evidence to
+  the shared Multi-Agent Server when configured. Both paths must produce a
+  finding with `is_suspicious` and `justification`. A valid, suspicious finding
+  is converted to an anomaly DTO — with the model's mean confidence score
+  derived from token log probabilities when available and the filenames of the
+  RAG documents used as `sources` — and persisted so it can be shown to the
+  user. Malformed responses from direct Ollama mode are retried with a higher
+  temperature, up to four attempts.
 - **Observe** — The persisted finding is surfaced to the user, who reviews it
   and records the ground truth by **confirming** it as genuinely suspicious
   (true positive) or **dismissing** it as a false positive. This human review
@@ -95,7 +113,7 @@ flowchart TD
     end
 
     subgraph Act
-        D --> E[Prompt Ollama for JSON finding]
+        D --> E[Review with Multi-Agent Server<br/>or direct Ollama]
         E --> F{Suspicious?}
         F -- No --> G[No anomaly created]
         F -- Yes --> H[Create + persist anomaly DTO]
@@ -134,6 +152,12 @@ Small HTTP client for the shared, retrieve-only RAG server. It exposes
 shape, and maps every failure to a safe `RAGError` code so a RAG outage degrades
 gracefully and never blocks anomaly detection. Retrieval is skipped when
 `RAG_ENABLED` is false.
+
+### `services/multi_agent_client.py`
+
+Authenticated HTTP client for the shared Multi-Agent Server. It submits and
+retrieves Anomalies workflows, records human decisions, applies the configured
+timeout, and maps service failures to safe error codes.
 
 ### `services/mcp_client.py`
 
@@ -197,3 +221,6 @@ variable helpers used by the application and integration clients.
 | `POST` | `/anomalies/<id>/confirm` | Marks an anomaly as confirmed and returns the refreshed anomaly list. |
 | `POST` | `/anomalies/<id>/dismiss` | Marks an anomaly as dismissed and returns the refreshed anomaly list. |
 | `POST` | `/dummy-anomaly` | Creates a random test anomaly and returns the refreshed anomaly list. |
+
+Shared-server anomaly decisions include a `reason` in the JSON request body;
+legacy anomalies without a workflow ID retain their existing decision behavior.

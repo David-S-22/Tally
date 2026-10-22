@@ -1,6 +1,7 @@
 import re
 import threading
 import time
+from typing import Any
 
 import pytest
 from datetime import datetime
@@ -15,6 +16,7 @@ from backend.app import app
 from backend.services import review_queue
 from backend.services import anomalies_api
 from backend.services import ollama_api
+from backend.services import agent_api, multi_agent_client
 from backend.services.review_queue import transaction_queue
 from backend.helpers import serialise
 from database.app import app as dbapp, setup_database
@@ -662,6 +664,195 @@ def test_dismiss_anomaly_sets_status(client: FlaskClient):
     assert dismissed.is_confirmed_by_user is False
 
 
+def test_multi_agent_review_persists_workflow_reference(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+):
+    monkeypatch.setenv("MULTI_AGENT_ENABLED", "true")
+    monkeypatch.setenv("MULTI_AGENT_SERVER_URL", "http://multi-agent")
+    monkeypatch.setattr(agent_api, "_build_reviewed_examples_context", lambda: "")
+    monkeypatch.setattr(agent_api, "_build_reference_context", lambda _txn: ("guidance", ["fraud.md"]))
+    captured = {}
+
+    def create_workflow(body):
+        captured.update(body)
+        return {
+            "status": "success",
+            "workflow_id": "workflow-123",
+            "worker_result": {
+                "status": "success",
+                "structured": {
+                    "is_suspicious": True,
+                    "justification": "A clearly unusual transaction.",
+                },
+            },
+            "reviewer_result": {"status": "success", "verdict": "approve"},
+        }
+
+    monkeypatch.setattr(multi_agent_client, "create_workflow", create_workflow)
+    transaction = dto.Transaction(
+        id=2111,
+        amount=9999,
+        merchant="Unknown ATM",
+        date=datetime.now(),
+        description="cash withdrawal",
+        category_id=0,
+    )
+
+    with app.app_context():
+        anomaly = agent_api.review_new_transaction(transaction)
+        assert anomaly is not None
+        persisted = anomalies_api.create_anomaly(anomaly)
+        found = anomalies_api.get_anomaly_by_transaction_id(transaction.id)
+
+    assert captured["feature"] == "anomalies"
+    assert captured["evidence"][0]["source"].startswith("transaction:2111:")
+    assert persisted.workflow_id == "workflow-123"
+    assert found is not None and found.workflow_id == "workflow-123"
+
+
+def test_multi_agent_client_forwards_backend_token_and_long_timeout(
+    monkeypatch: MonkeyPatch,
+):
+    monkeypatch.setenv("MULTI_AGENT_SERVER_URL", "http://multi-agent")
+    monkeypatch.setenv("MULTI_AGENT_TOKEN", "test-token")
+    monkeypatch.setenv("MULTI_AGENT_TIMEOUT_SECONDS", "600")
+    captured: dict[str, Any] = {}
+
+    def post(url, **kwargs):
+        captured.update(url=url, **kwargs)
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: {"workflow_id": "workflow-123"},
+        )
+
+    monkeypatch.setattr(multi_agent_client.requests, "post", post)
+
+    result = multi_agent_client.create_workflow({"feature": "anomalies"})
+
+    assert result["workflow_id"] == "workflow-123"
+    assert captured["headers"]["Authorization"] == "Bearer test-token"
+    assert captured["timeout"] == 600
+
+
+def test_multi_agent_creation_timeout_adopts_only_matching_saved_request(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+):
+    monkeypatch.setenv("MULTI_AGENT_ENABLED", "true")
+    monkeypatch.setenv("MULTI_AGENT_SERVER_URL", "http://multi-agent")
+    monkeypatch.setattr(agent_api, "_build_reviewed_examples_context", lambda: "")
+    monkeypatch.setattr(agent_api, "_build_reference_context", lambda _txn: ("", []))
+    submitted = []
+
+    def create_workflow(body):
+        submitted.append(body)
+        raise multi_agent_client.MultiAgentError("multi_agent_timeout")
+
+    def latest_workflow(feature):
+        assert feature == "anomalies"
+        return {
+            "status": "success",
+            "workflow_id": "saved-workflow",
+            "evidence": submitted[0]["evidence"],
+            "worker_result": {
+                "status": "success",
+                "structured": {
+                    "is_suspicious": False,
+                    "justification": "This appears to be a routine purchase.",
+                },
+            },
+            "reviewer_result": {"status": "success", "verdict": "approve"},
+        }
+
+    monkeypatch.setattr(multi_agent_client, "create_workflow", create_workflow)
+    monkeypatch.setattr(multi_agent_client, "latest_workflow", latest_workflow)
+    transaction = dto.Transaction(
+        id=2115,
+        amount=20,
+        merchant="Corner store",
+        date=datetime.now(),
+        description="groceries",
+        category_id=0,
+    )
+
+    with app.app_context():
+        result = agent_api.review_new_transaction(transaction)
+
+    assert result is None
+    assert len(submitted) == 1
+    assert submitted[0]["evidence"][0]["source"].startswith("transaction:2115:")
+
+
+def test_multi_agent_decision_is_recorded_before_local_confirmation(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+):
+    with app.app_context():
+        anomaly = anomalies_api.create_anomaly(
+            dto.Anomaly(
+                id=0,
+                transaction_id=2112,
+                agent_reason_suspected="review me",
+                is_confirmed_by_user=None,
+                workflow_id="workflow-123",
+            )
+        )
+    captured: dict[str, Any] = {}
+
+    def record_decision(workflow_id, body):
+        captured.update(workflow_id=workflow_id, **body)
+        return {
+            "human_decision": {
+                "status": "recorded",
+                "decision": "Accept",
+            },
+        }
+
+    monkeypatch.setattr(multi_agent_client, "record_decision", record_decision)
+
+    response = client.post(
+        f"/anomalies/{anomaly.id}/confirm",
+        json={"reason": "I verified this transaction."},
+    )
+
+    assert response.status_code == 200
+    assert captured == {
+        "workflow_id": "workflow-123",
+        "decision": "Accept",
+        "reason": "I verified this transaction.",
+    }
+    with app.app_context():
+        confirmed = anomalies_api.get_anomaly_by_transaction_id(2112)
+    assert confirmed is not None and confirmed.is_confirmed_by_user is True
+
+
+def test_multi_agent_decision_failure_does_not_update_local_status(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+):
+    with app.app_context():
+        anomaly = anomalies_api.create_anomaly(
+            dto.Anomaly(
+                id=0,
+                transaction_id=2113,
+                agent_reason_suspected="review me",
+                is_confirmed_by_user=None,
+                workflow_id="workflow-123",
+            )
+        )
+
+    def fail_decision(_workflow_id, _body):
+        raise multi_agent_client.MultiAgentError("multi_agent_unavailable")
+
+    monkeypatch.setattr(multi_agent_client, "record_decision", fail_decision)
+    response = client.post(
+        f"/anomalies/{anomaly.id}/dismiss",
+        json={"reason": "I checked the purchase."},
+    )
+
+    assert response.status_code == 503
+    with app.app_context():
+        unchanged = anomalies_api.get_anomaly_by_transaction_id(2113)
+    assert unchanged is not None and unchanged.is_confirmed_by_user is None
+
+
 def test_review_button_only_renders_when_unreviewed(client: FlaskClient):
     with app.app_context():
         unreviewed = anomalies_api.create_anomaly(
@@ -816,6 +1007,7 @@ def integrate_services(monkeypatch: MonkeyPatch):
     monkeypatch.setenv("RAG_FEATURE", "anomalies")
     monkeypatch.setenv("RAG_TOP_K", "3")
     monkeypatch.setenv("RAG_TIMEOUT_SECONDS", "5")
+    monkeypatch.setenv("MULTI_AGENT_ENABLED", "false")
 
     # fastmcp bypasses the requests-based RequestsMock, so stub the MCP client by
     # default; tests that need reviewed examples override this via intercept_mcp.

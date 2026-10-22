@@ -11,6 +11,8 @@ for findings supported by stronger evidence and confirmed as accurate, and
 lower for findings dismissed as false positives. Each anomaly also stores
 `sources`: a JSON list of the RAG reference-document filenames the agent used to
 ground its finding (an empty list when none were retrieved).
+When a finding was created by the shared Multi-Agent Server, `workflow_id`
+stores the corresponding workflow reference; it is null for legacy findings.
 
 The `transactions` table and `anomalies` table are stored in separate databases. Therefore, the relationship between `anomalies.transaction_id` and `transactions.id` is a logical cross-database reference rather than an enforced database foreign key. The `UNIQUE` constraint on `anomalies.transaction_id` ensures that each transaction can have zero or one anomaly.
 
@@ -82,6 +84,7 @@ erDiagram
         boolean is_confirmed_by_user
         float confidence "0 to 1, nullable"
         json sources "RAG source filenames"
+        string workflow_id "nullable shared workflow reference"
     }
 ```
 
@@ -109,6 +112,7 @@ erDiagram
         boolean is_confirmed_by_user
         float confidence "0 to 1, nullable"
         json sources "RAG source filenames"
+        string workflow_id "nullable shared workflow reference"
     }
 ```
 
@@ -136,5 +140,6 @@ erDiagram
         BOOLEAN is_confirmed_by_user "NULLABLE"
         FLOAT confidence "NULLABLE, 0 <= confidence <= 1"
         JSON sources "NOT NULL, defaults to []"
+        VARCHAR workflow_id "NULLABLE"
     }
 ```

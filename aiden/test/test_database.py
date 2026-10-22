@@ -98,6 +98,25 @@ def test_create_anomaly_persists_sources(client: FlaskClient):
     assert resp.json["sources"] == ["fraud-red-flags.md", "fraud-patterns.md"]
 
 
+def test_create_anomaly_persists_workflow_id(client: FlaskClient):
+    resp = client.post(
+        "/anomalies/",
+        json={
+            "transaction_id": 124,
+            "agent_reason_suspected": "review me",
+            "workflow_id": "workflow-123",
+        },
+    )
+
+    assert resp.status_code == 201
+    assert isinstance(resp.json, dict)
+    created = resp.json
+    assert created["workflow_id"] == "workflow-123"
+    fetched = client.get(f"/anomalies/{created['id']}")
+    assert isinstance(fetched.json, dict)
+    assert fetched.json["workflow_id"] == "workflow-123"
+
+
 def test_create_anomaly_deduplicates_sources(client: FlaskClient):
     json = dict(
         transaction_id=122,

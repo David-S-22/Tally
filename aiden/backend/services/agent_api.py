@@ -2,6 +2,7 @@ from datetime import datetime
 from json import JSONDecodeError
 from typing import Optional
 from dataclasses import dataclass
+from uuid import uuid4
 
 from flask import current_app
 
@@ -9,6 +10,7 @@ from shared.backend import dto
 from ..config import config
 from .ollama_api import prompt
 from . import mcp_client
+from . import multi_agent_client
 from . import rag_client
 from ..helpers import serialise
 
@@ -85,6 +87,7 @@ class ReviewFinding:
     is_suspicious: bool
     justification: str
     confidence: Optional[float] = None
+    workflow_id: Optional[str] = None
 
 def review_new_transaction(
     transaction: dto.Transaction,
@@ -106,6 +109,29 @@ def review_new_transaction(
         detect_system_prompt,
         detect_user_prompt,
     )
+
+    if config.MULTI_AGENT_ENABLED:
+        review_finding = _review_with_multi_agent(
+            transaction,
+            examples_context,
+            reference_context,
+            reference_sources,
+        )
+        if not review_finding.is_suspicious:
+            current_app.logger.info(
+                "Not classified suspicious, no anomaly. Justification: %s",
+                review_finding.justification,
+            )
+            return None
+        return dto.Anomaly(
+            id=0,
+            transaction_id=transaction.id,
+            agent_reason_suspected=review_finding.justification,
+            is_confirmed_by_user=None,
+            confidence=review_finding.confidence,
+            sources=reference_sources,
+            workflow_id=review_finding.workflow_id,
+        )
 
     while iteration < 5:
         temperature = 0.2 * iteration # increase as it gets iterated
@@ -143,6 +169,126 @@ def review_new_transaction(
         is_confirmed_by_user=None,
         confidence=review_finding.confidence,
         sources=reference_sources,
+    )
+
+
+def _review_with_multi_agent(
+    transaction: dto.Transaction,
+    examples_context: str,
+    reference_context: str,
+    reference_sources: list[str],
+) -> ReviewFinding:
+    source = f"transaction:{transaction.id}:{uuid4().hex}"
+    evidence = [{
+        "source": source,
+        "summary": (
+            f"Transaction {transaction.id}: {transaction.date}; "
+            f"{transaction.merchant}; {transaction.description}; "
+            f"amount {transaction.amount}."
+        ),
+        "data": serialise(transaction),
+    }]
+    if examples_context.strip():
+        evidence.append({
+            "source": "reviewed-examples",
+            "summary": examples_context.strip()[:4000],
+        })
+    if reference_context.strip():
+        evidence.append({
+            "source": "rag:reference-guidance",
+            "summary": reference_context.strip()[:4000],
+            "data": {"sources": reference_sources},
+        })
+
+    workflow_request = {
+        "contract_version": "1.0",
+        "feature": "anomalies",
+        "task": (
+            "Assess whether the supplied transaction is suspicious using only "
+            "the evidence. Return structured output with exactly these fields: "
+            '{"is_suspicious": boolean, "justification": string}. Keep the '
+            "justification factual, concise, and 30 to 50 words. Do not claim "
+            "fraud as fact or invent missing context. Use confirmed and "
+            "rejected examples as positive and negative guidance."
+        ),
+        "evidence": evidence,
+        "context": {
+            "constraints": (
+                "Do not take action on the transaction. The user will review "
+                "the finding."
+            ),
+        },
+        "options": {},
+    }
+    try:
+        workflow = multi_agent_client.create_workflow(workflow_request)
+    except multi_agent_client.MultiAgentError as error:
+        if error.code != "multi_agent_timeout":
+            raise
+        try:
+            latest = multi_agent_client.latest_workflow("anomalies")
+        except multi_agent_client.MultiAgentError:
+            latest = None
+        latest_evidence = latest.get("evidence") if latest else None
+        if (
+            latest
+            and isinstance(latest_evidence, list)
+            and any(
+                item.get("source") == source
+                for item in latest_evidence
+                if isinstance(item, dict)
+            )
+        ):
+            workflow = latest
+        else:
+            raise
+
+    workflow_id = workflow.get("workflow_id")
+    worker = workflow.get("worker_result")
+    if (
+        workflow.get("status") != "success"
+        or not isinstance(workflow_id, str)
+        or not workflow_id.strip()
+        or not isinstance(worker, dict)
+        or worker.get("status") != "success"
+        or not isinstance(workflow.get("reviewer_result"), dict)
+        or workflow["reviewer_result"].get("status") != "success"
+    ):
+        raise multi_agent_client.MultiAgentError(
+            "multi_agent_invalid_response",
+        )
+
+    structured = worker.get("structured")
+    if (
+        isinstance(structured, dict)
+        and isinstance(structured.get("is_suspicious"), bool)
+        and isinstance(structured.get("justification"), str)
+    ):
+        finding_data = structured
+    else:
+        output = worker.get("output")
+        if not isinstance(output, str):
+            raise multi_agent_client.MultiAgentError(
+                "multi_agent_invalid_response",
+            )
+        try:
+            finding_data = current_app.json.loads(output)
+        except (ValueError, RecursionError):
+            finding_data = None
+    if (
+        not isinstance(finding_data, dict)
+        or not isinstance(finding_data.get("is_suspicious"), bool)
+        or not isinstance(finding_data.get("justification"), str)
+        or not finding_data["justification"].strip()
+    ):
+        raise multi_agent_client.MultiAgentError(
+            "multi_agent_invalid_response",
+        )
+
+    return ReviewFinding(
+        is_suspicious=finding_data["is_suspicious"],
+        justification=finding_data["justification"].strip(),
+        workflow_id=workflow_id,
     )
 
 
@@ -264,6 +410,7 @@ def parse_review_finding(model_response: str) -> Optional[ReviewFinding]:
         return None
 
     if (
+        isinstance(data, dict) and
         isinstance(is_suspicious := data.get("is_suspicious"), bool) and
         isinstance(justification := data.get("justification"), str)
     ):

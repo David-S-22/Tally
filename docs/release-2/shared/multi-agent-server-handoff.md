@@ -38,8 +38,9 @@ Expect `ready: True` and no missing models. A call without the token must receiv
 
 Use a workflow request timeout above the configured overall deadline:
 550 seconds is the initial minimum recommendation for a 540-second workflow.
-Allow more overhead on slow machines. Feature owners must implement timeout
-and token forwarding in their future backend adapters.
+Allow more overhead on slow machines. The Anomalies adapter uses a 600-second
+timeout and backend-only token forwarding; other future feature adapters must
+implement the same documented requirements.
 Only one model workflow runs at a time; handle `workflow_busy`/503 and its
 `Retry-After` header without blocking other UI interaction.
 

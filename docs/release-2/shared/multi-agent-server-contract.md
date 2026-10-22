@@ -175,6 +175,9 @@ Routes and common result fields remain. Intentional differences:
 The earlier stub client's 90-second timeout is insufficient for the default
 real-model deadline. Future feature clients must implement the documented
 timeout/authentication/reason handling before claiming end-to-end integration.
+The Anomalies integration is documented in the
+[Anomalies feature guide](../../release-1/anomalies/multi-agent-server.md);
+other feature integrations remain owner-managed work.
 
 ## Rubric boundary
 

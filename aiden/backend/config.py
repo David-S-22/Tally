@@ -6,6 +6,7 @@ Values are resolved lazily from the environment: reading an attribute of
 up front.
 """
 import os
+import math
 from typing import Any, Callable
 
 
@@ -26,6 +27,13 @@ def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed < 1:
         raise ValueError(f"expected a positive integer but got {value!r}")
+    return parsed
+
+
+def _workflow_timeout(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed <= 540:
+        raise ValueError("must exceed the shared server's 540-second deadline")
     return parsed
 
 
@@ -101,6 +109,27 @@ class _Config:
     def RAG_TIMEOUT_SECONDS(self) -> float:
         return _resolve("RAG_TIMEOUT_SECONDS", float)
 
+    @property
+    def MULTI_AGENT_ENABLED(self) -> bool:
+        return _bool(os.environ.get("MULTI_AGENT_ENABLED", "false"))
+
+    @property
+    def MULTI_AGENT_SERVER_URL(self) -> str:
+        return _url(os.environ.get(
+            "MULTI_AGENT_SERVER_URL",
+            "http://host.docker.internal:5010",
+        ))
+
+    @property
+    def MULTI_AGENT_TOKEN(self) -> str:
+        return os.environ.get("MULTI_AGENT_TOKEN", "")
+
+    @property
+    def MULTI_AGENT_TIMEOUT_SECONDS(self) -> float:
+        return _workflow_timeout(
+            os.environ.get("MULTI_AGENT_TIMEOUT_SECONDS", "600")
+        )
+
     def check_all(self) -> None:
         """Resolve every configured variable, raising if any is missing or invalid.
 
@@ -124,6 +153,16 @@ class _Config:
                 getattr(self, name)
             except RuntimeError as exc:
                 errors.append(str(exc))
+
+        try:
+            if self.MULTI_AGENT_ENABLED:
+                for name in (
+                    "MULTI_AGENT_SERVER_URL",
+                    "MULTI_AGENT_TIMEOUT_SECONDS",
+                ):
+                    getattr(self, name)
+        except (RuntimeError, ValueError) as exc:
+            errors.append(str(exc))
 
         if errors:
             raise RuntimeError(

@@ -35,6 +35,7 @@ class Anomaly:
     is_confirmed_by_user: Optional[bool]
     confidence: Optional[float] = None
     sources: List[str] = field(default_factory=list)
+    workflow_id: Optional[str] = None
 
 @dataclass(frozen=True)
 class Goal:
