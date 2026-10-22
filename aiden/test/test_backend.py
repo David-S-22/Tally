@@ -33,6 +33,46 @@ def test_index(client: FlaskClient):
     assert resp.json["container"] == "anomalies-backend"
 
 
+def test_anomalies_database_client_uses_configured_service_timeout(
+    monkeypatch: MonkeyPatch,
+):
+    monkeypatch.setenv("ANOMALIES_DB_URL", "http://mock-database-url/anomalies")
+    monkeypatch.setenv("SERVICE_TIMEOUT_SECONDS", "123")
+    captured: dict[str, Any] = {}
+
+    def get(url, **kwargs):
+        captured.update(url=url, **kwargs)
+        return SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: [],
+        )
+
+    monkeypatch.setattr(anomalies_api, "get", get)
+
+    assert anomalies_api.get_all_anomalies() == []
+    assert captured["timeout"] == 123
+
+
+def test_anomalies_database_client_keeps_no_timeout_without_override(
+    monkeypatch: MonkeyPatch,
+):
+    monkeypatch.setenv("ANOMALIES_DB_URL", "http://mock-database-url/anomalies")
+    monkeypatch.delenv("SERVICE_TIMEOUT_SECONDS", raising=False)
+    captured: dict[str, Any] = {}
+
+    def get(url, **kwargs):
+        captured.update(url=url, **kwargs)
+        return SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: [],
+        )
+
+    monkeypatch.setattr(anomalies_api, "get", get)
+
+    assert anomalies_api.get_all_anomalies() == []
+    assert captured["timeout"] is None
+
+
 def test_ollama_prompt_requests_logprobs(monkeypatch: MonkeyPatch):
     captured = {}
 

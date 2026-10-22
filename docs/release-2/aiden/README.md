@@ -16,8 +16,9 @@ review UI.
 
 Compose enables the integration by default and allows the URL, token, and
 timeout to be overridden by `MULTI_AGENT_URL`, `MULTI_AGENT_TOKEN`, and
-`MULTI_AGENT_TIMEOUT`. The shared service remains a separately started host
-process.
+`MULTI_AGENT_TIMEOUT`. Compose sets the Anomalies timeout to 900 seconds to
+allow for network latency. The shared service remains a separately started
+host process.
 
 ## Review and decision flow
 
