@@ -31,6 +31,7 @@ class Coordinator:
         self.agents = agents or Agents(self.settings)
         self.store = Store(log_dir or self.settings.data_dir)
         self.gate = threading.Lock()
+        self.gate_enabled = self.settings.single_workflow_gate
         for record in self.store.all():
             if record["workflow_state"] == "running":
                 record, revision = self.store.get(record["workflow_id"])
@@ -67,14 +68,16 @@ class Coordinator:
 
     def run_workflow(self, body, request_id=None):
         validate_request(body)
-        if not self.gate.acquire(blocking=False):
+        gated = self.gate_enabled
+        if gated and not self.gate.acquire(blocking=False):
             raise WorkflowError(
                 503, "Workflow capacity reached; retry later", "workflow_busy"
             )
         try:
             return self._run(body, request_id)
         finally:
-            self.gate.release()
+            if gated:
+                self.gate.release()
 
     def _create_record(self, body, request_id):
         record = {

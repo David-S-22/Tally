@@ -34,6 +34,11 @@ services:
       SAVINGS_FRONTEND_URL: http://savings-frontend:3002
       BILLS_FRONTEND_URL: http://bills-frontend:80
       BUDGETS_FRONTEND_URL: http://budgets-frontend:3006
+      MULTI_AGENT_URL: ${MULTI_AGENT_URL:-http://host.docker.internal:5010}
+      MULTI_AGENT_TOKEN: ${MULTI_AGENT_TOKEN:-}
+      NGINX_ENTRYPOINT_LOCAL_RESOLVERS: 1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - transactions-frontend
       - anomalies-frontend

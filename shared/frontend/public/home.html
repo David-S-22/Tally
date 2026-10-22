@@ -38,4 +38,60 @@
     </table>
 
     <p class="stub">Pick a tab above to get started.</p>
+
+    <h2>Multi-Agent server</h2>
+    <p>
+        <label>
+            <input type="checkbox" id="multi-agent-gate-toggle" disabled>
+            Allow only one Multi-Agent workflow at a time
+        </label>
+    </p>
+    <p id="multi-agent-gate-status">Checking Multi-Agent server...</p>
 </section>
+
+<script>
+(function () {
+    var toggle = document.getElementById('multi-agent-gate-toggle');
+    var status = document.getElementById('multi-agent-gate-status');
+    var url = '/multi-agent-admin/gate';
+
+    function show(enabled) {
+        toggle.checked = enabled;
+        toggle.disabled = false;
+        status.textContent = enabled
+            ? 'Lock on: extra requests are rejected with "busy" until the running workflow finishes.'
+            : 'Lock off: workflows run concurrently with no limit, which may slow or crash Ollama.';
+    }
+
+    function fail(message) {
+        toggle.disabled = true;
+        status.textContent = message || 'Multi-Agent server controls are unavailable.';
+    }
+
+    function call(options) {
+        return fetch(url, options).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (body) {
+                if (!response.ok) {
+                    throw new Error(body && body.error ? body.error : 'Multi-Agent server is unavailable.');
+                }
+                return body;
+            });
+        });
+    }
+
+    toggle.addEventListener('change', function () {
+        var wanted = toggle.checked;
+        toggle.disabled = true;
+        call({
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: wanted })
+        }).then(function (body) { show(body.single_workflow_gate); })
+          .catch(function (error) { fail(error.message); });
+    });
+
+    call({ method: 'GET' })
+        .then(function (body) { show(body.single_workflow_gate); })
+        .catch(function (error) { fail(error.message); });
+})();
+</script>

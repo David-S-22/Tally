@@ -16,6 +16,7 @@ class Settings:
     reviewer_model: str = "llama3.1:8b"
     step_timeout: float = 180
     workflow_timeout: float = 540
+    single_workflow_gate: bool = False
     data_dir: Path = Path(__file__).resolve().parent / "logs"
     prompt_dir: Path = Path(__file__).resolve().parents[2] / "prompts" / "multi_agent"
 
@@ -75,5 +76,9 @@ class Settings:
             workflow_timeout=float(
                 os.getenv("MULTI_AGENT_WORKFLOW_TIMEOUT_SECONDS", "540")
             ),
+            single_workflow_gate=os.getenv(
+                "MULTI_AGENT_SINGLE_WORKFLOW_GATE", "false"
+            ).strip().lower()
+            in ("1", "true", "yes", "on"),
             data_dir=Path(os.getenv("MULTI_AGENT_LOG_DIR", str(cls.data_dir))),
         )

@@ -609,8 +609,12 @@ module modSharedFrontend 'modules/container-app.bicep' = {
     cpu: defaultCpu
     memory: defaultMemory
     minReplicas: minReplicas
+    appSecrets: { 'multi-agent-token': multiAgentToken }
     env: [
       { name: 'PORT', value: '3000' }
+      { name: 'MULTI_AGENT_URL', value: multiAgentUrl }
+      { name: 'MULTI_AGENT_TOKEN', secretRef: 'multi-agent-token' }
+      { name: 'NGINX_ENTRYPOINT_LOCAL_RESOLVERS', value: '1' }
       { name: 'TRANSACTIONS_FRONTEND_URL', value: 'https://transactions-frontend.${envDomain}' }
       { name: 'ANOMALIES_FRONTEND_URL', value: 'https://anomalies-frontend.${envDomain}' }
       { name: 'SAVINGS_FRONTEND_URL', value: 'https://savings-frontend.${envDomain}' }

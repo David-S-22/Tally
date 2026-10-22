@@ -269,7 +269,7 @@ def test_capacity_does_not_block_reads(tmp_path):
                 assert release.wait(10)
             return super().generate(role, *args)
 
-    settings = Settings(host="127.0.0.1")
+    settings = Settings(host="127.0.0.1", single_workflow_gate=True)
     app = create_app(tmp_path, settings, Agents(settings, Blocked()))
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(
@@ -285,6 +285,35 @@ def test_capacity_does_not_block_reads(tmp_path):
         finally:
             release.set()
         assert future.result().status_code == 200
+
+
+def test_gate_can_be_toggled_and_is_off_by_default(tmp_path):
+    entered, release = threading.Event(), threading.Event()
+
+    class Blocked(FakeModel):
+        def generate(self, role, *args):
+            if role == "planner" and not entered.is_set():
+                entered.set()
+                assert release.wait(10)
+            return super().generate(role, *args)
+
+    settings = Settings(host="127.0.0.1")
+    app = create_app(tmp_path, settings, Agents(settings, Blocked()))
+    client = app.test_client()
+    assert client.get("/admin/gate").get_json() == {"single_workflow_gate": False}
+    assert client.put("/admin/gate", json={"enabled": "yes"}).status_code == 400
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(lambda: app.test_client().post("/workflow", json=REQUEST))
+        try:
+            assert entered.wait(5)
+            assert client.post("/workflow", json=REQUEST).status_code == 200
+        finally:
+            release.set()
+        assert future.result().status_code == 200
+    assert client.put("/admin/gate", json={"enabled": True}).get_json() == {
+        "single_workflow_gate": True
+    }
+    assert client.get("/health").get_json()["single_workflow_gate"] is True
 
 
 def test_interrupted_workflow_is_recovered_as_failed(tmp_path):
