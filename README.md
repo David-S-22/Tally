@@ -16,8 +16,8 @@ Run records land in `reports/` (gitignored). Details: `agentic_loop/README.md`.
 ## Pre-commit security scans
 
 `.pre-commit-config.yaml` runs Ruff security rules (`ruff.toml`),
-detect-secrets (`.secrets.baseline`) and pip-audit on every commit, each as
-a pytest file in `tests/pre_commit/`:
+detect-secrets (`.secrets.baseline`) and pip-audit on every commit and on
+pull requests to `main`, each as a pytest file in `tests/pre_commit/`.
 
 ```
 pip install pre-commit
