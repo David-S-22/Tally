@@ -237,6 +237,56 @@ def register_routes(application):
         db.session.commit()
         return jsonify(transaction_response(transaction)), 201
 
+    @application.post("/transactions/bulk")
+    def post_transactions_bulk():
+        payload = json_body()
+        rows = payload.get("transactions")
+        if not isinstance(rows, list) or not rows:
+            raise ApiError(
+                "transactions must be a non-empty list",
+                "invalid_transactions",
+                422,
+            )
+        validated = [validate_transaction_payload(row) if isinstance(row, dict) else None for row in rows]
+        if any(values is None for values in validated):
+            raise ApiError(
+                "each transaction must be a JSON object",
+                "invalid_transactions",
+                422,
+            )
+        categories = {
+            category_id
+            for category_id in db.session.scalars(select(Category.id))
+        }
+        for values in validated:
+            if values["category_id"] not in categories:
+                raise ApiError("category not found", "category_not_found", 422)
+        existing = {
+            (row.date, row.merchant, row.amount)
+            for row in db.session.execute(
+                select(Transaction.date, Transaction.merchant, Transaction.amount)
+            )
+        }
+        now = utc_datetime()
+        created = 0
+        for values in validated:
+            key = (values["date"], values["merchant"], values["amount"])
+            if key in existing:
+                continue
+            existing.add(key)
+            db.session.add(Transaction(
+                date=values["date"],
+                merchant=values["merchant"],
+                description=values["description"],
+                amount=values["amount"],
+                category_id=values["category_id"],
+                created_at=now,
+                updated_at=now,
+            ))
+            created += 1
+        db.session.commit()
+        return jsonify(created=created, already_present=len(validated) - created), 201
+
     @application.get("/transactions/<transaction_id>")
     def get_transaction(transaction_id):
         transaction = resolve_transaction(transaction_id)

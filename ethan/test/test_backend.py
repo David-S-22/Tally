@@ -3252,32 +3252,28 @@ def test_seed_demo_data_rejects_non_boolean_flags():
     assert resp.status_code == 422
 
 
-def test_seed_transactions_skips_existing(monkeypatch):
+def test_seed_transactions_posts_single_bulk_request(monkeypatch):
     from backend import demo_data
 
-    posted = []
-    existing = [{"date": "Sat, 01 Aug 2026 00:00:00 GMT", "merchant": "Harbourview Realty", "amount": 1100.0}]
+    calls = []
 
     class Response:
-        def __init__(self, payload):
-            self._payload = payload
-
         def raise_for_status(self):
             return None
 
         def json(self):
-            return self._payload
+            return {"created": 65, "already_present": 0}
 
-    def fake_request(method, url, **kwargs):
-        if method == "POST":
-            posted.append(kwargs["json"])
-            return Response({})
-        return Response(existing)
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs["json"]))
+        return Response()
 
-    monkeypatch.setattr("backend.demo_data.requests.request", fake_request)
+    monkeypatch.setattr("backend.demo_data.requests.post", fake_post)
 
     result = demo_data.seed_transactions()
 
     total = sum(len(rows) for rows in demo_data.TRANSACTIONS.values())
-    assert result == {"created": total - 1, "already_present": 1}
-    assert len(posted) == total - 1
+    assert result == {"created": 65, "already_present": 0}
+    assert len(calls) == 1
+    assert calls[0][0].endswith("/transactions/bulk")
+    assert len(calls[0][1]["transactions"]) == total

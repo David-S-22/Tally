@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from decimal import Decimal
-from email.utils import parsedate_to_datetime
-from datetime import timezone
-
 import requests
 
 from . import config, db_api
@@ -84,64 +80,28 @@ TRANSACTIONS = {
 }
 
 
-def _transactions_url() -> str:
-    return config.TRANSACTIONS_API_URL + "/transactions"
-
-
-def _request(method: str, **kwargs):
+def seed_transactions() -> dict[str, int]:
+    rows = [
+        {
+            "date": f"{month}-{day:02d}",
+            "merchant": merchant,
+            "description": description,
+            "amount": float(amount),
+            "category_id": category_id,
+        }
+        for month in sorted(TRANSACTIONS)
+        for day, merchant, description, amount, category_id in TRANSACTIONS[month]
+    ]
     try:
-        response = requests.request(
-            method,
-            _transactions_url(),
+        response = requests.post(
+            f"{config.TRANSACTIONS_DB_URL}/transactions/bulk",
+            json={"transactions": rows},
             timeout=config.TRANSACTIONS_TIMEOUT_SECONDS,
-            **kwargs,
         )
         response.raise_for_status()
-        return response
+        return response.json()
     except requests.RequestException as error:
-        raise ServiceError("transactions API is unavailable", 503, "transactions_unavailable") from error
-
-
-def _iso_date(value: str) -> str:
-    if len(value) >= 10 and value[4] == "-":
-        return value[:10]
-    try:
-        return parsedate_to_datetime(value).astimezone(timezone.utc).date().isoformat()
-    except (TypeError, ValueError):
-        return value
-
-
-def _key(date: str, merchant: str, amount: object) -> tuple[str, str, Decimal]:
-    return _iso_date(date), merchant, Decimal(str(amount))
-
-
-def seed_transactions() -> dict[str, int]:
-    existing = {
-        _key(str(row.get("date", "")), str(row.get("merchant", "")), row.get("amount", 0))
-        for row in _request("GET").json()
-    }
-    created = 0
-    skipped = 0
-    for month in sorted(TRANSACTIONS):
-        for day, merchant, description, amount, category_id in TRANSACTIONS[month]:
-            date = f"{month}-{day:02d}"
-            key = _key(date, merchant, amount)
-            if key in existing:
-                skipped += 1
-                continue
-            _request(
-                "POST",
-                json={
-                    "date": date,
-                    "merchant": merchant,
-                    "description": description,
-                    "amount": float(amount),
-                    "category_id": category_id,
-                },
-            )
-            existing.add(key)
-            created += 1
-    return {"created": created, "already_present": skipped}
+        raise ServiceError("transactions database is unavailable", 503, "transactions_unavailable") from error
 
 
 def seed_demo_data(skip_budgets_reset: bool, skip_transactions: bool) -> dict:
