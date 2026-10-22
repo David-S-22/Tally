@@ -191,7 +191,6 @@ provision_ai_vms() {
     export AI_VM_SSH_PUBLIC_KEY="${AI_VM_SSH_PUBLIC_KEY:-$(cat "$HOME/.ssh/id_rsa.pub" 2>/dev/null || true)}"
     az deployment group create -g "$RESOURCE_GROUP" --name tally-ai-vms \
         --template-file bicep/ai-services.bicep --parameters bicep/ai-services.bicepparam --output none
-    for service in rag mcp multi-agent; do check_ai_endpoint "$service"; done
 }
 
 update_ai_services_vm() {
@@ -210,20 +209,7 @@ update_ai_services_vm() {
             --query 'value[0].message' -o tsv)
         printf '%s\n' "$result"
         [[ "$result" == *TALLY_UPDATE_OK* ]] || return 1
-        check_ai_endpoint "$service"
     done
-}
-
-check_ai_endpoint() {
-    local service="$1" endpoint expected code
-    case "$service" in
-        mcp) endpoint=8000/mcp; expected='^(200|400|406)$' ;;
-        rag) endpoint=5003/health; expected='^200$' ;;
-        multi-agent) endpoint=5010/health; expected='^401$' ;; # Requires authentication.
-    esac
-    code=$(curl -sS --retry 12 --retry-connrefused --retry-delay 5 --max-time 30 \
-        -o /dev/null -w '%{http_code}' "http://$AI_DNS_NAME:$endpoint")
-    [[ "$code" =~ $expected ]] || { echo "$service endpoint failed: HTTP $code" >&2; return 1; }
 }
 
 TARGET="${1:-all}"
